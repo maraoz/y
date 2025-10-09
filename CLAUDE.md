@@ -4,69 +4,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is a minimal X (Twitter) API v2 CLI tool written in Python. The single-file script (`x.py`) provides a command-line interface for:
-- Posting tweets
-- Viewing mentions (with unread tracking)
-- Checking engagement metrics on recent tweets
+X (Twitter) API v2 CLI tool. Single Python file with commands for posting tweets, viewing mentions, and checking engagement metrics. Includes interactive TUI for replying to mentions.
 
 ## Configuration
 
-**CRITICAL**: The script expects OAuth 1.0a credentials to be imported from `config.py`:
-- `X_API_KEY`
-- `X_API_SECRET`
-- `X_ACCESS_TOKEN`
-- `X_ACCESS_TOKEN_SECRET`
-
-The `config.py` file is currently empty and must be populated by the user before the script can run. These credentials should NOT be committed to version control.
-
-## Common Commands
-
-```bash
-# Post a tweet
-./x.py post "Tweet text here"
-
-# List mentions (unread only by default)
-./x.py mentions
-
-# List all recent mentions (ignore unread tracking)
-./x.py mentions --all
-
-# List mentions with custom limit (5-100)
-./x.py mentions --limit 50
-
-# View engagement metrics on your recent tweets
-./x.py engagements
-
-# View engagements with custom limit
-./x.py engagements --limit 20
+Requires OAuth 1.0a credentials in `config.py`:
+```python
+X_API_KEY = "..."
+X_API_SECRET = "..."
+X_ACCESS_TOKEN = "..."
+X_ACCESS_TOKEN_SECRET = "..."
 ```
 
-## Architecture
+**Never commit `config.py` to version control.**
 
-**Single-file design**: All functionality is in `x.py` (~165 lines).
+## Commands
 
-**State management**: The script maintains state in `.x_cli_state.json` to track the most recent mention ID seen. This enables "unread" mention filtering across CLI invocations.
+```bash
+./x.py post "text"              # Post tweet
+./x.py mentions [--all] [--limit N]  # List mentions
+./x.py engagements [--limit N]  # View metrics
+./x.py interact [--limit N]     # Interactive TUI
+```
 
-**API client pattern**:
-- `client()`: Returns OAuth1 session object
-- `api()`: Generic GET request handler with error handling
-- `api_post()`: Generic POST request handler with error handling
-- All API functions return parsed JSON responses
+## Code Structure
 
-**Core functions**:
-- `get_me()`: Fetch authenticated user info
-- `post_tweet()`: Create a new tweet
-- `list_mentions()`: Fetch mentions with optional unread filtering
-- `list_engagements()`: Fetch recent tweets with public metrics
+**Clean layer separation:**
+- **API Client Layer** (lines 22-55): `api_request()` handles all HTTP
+- **State Management** (lines 57-77): `.x_cli_state.json` for unread tracking
+- **API Operations** (lines 79-158): Business logic, returns clean data
+- **TUI Components** (lines 172-305): Curses rendering and input
+- **TUI Controller** (lines 307-341): Coordinates UI flow
+- **CLI Commands** (lines 343-374): Entry points, fetch data before entering curses
+- **Main** (lines 376-416): Arg parsing and error handling
 
-**API base URL**: Configurable via `X_API_BASE` constant (line 5). Can be switched between `api.x.com` and `api.twitter.com` if needed.
+**Key pattern:** API calls happen outside curses mode to ensure errors print to terminal.
 
-**Output format**: All commands output JSON to stdout. Errors are written to stderr with HTTP status codes.
+## Dependencies
 
-## Development Notes
-
-- The script uses X API v2 endpoints exclusively
-- OAuth 1.0a authentication via `requests_oauthlib`
-- No external dependencies beyond `requests` and `requests_oauthlib`
-- Error handling: HTTP errors (4xx/5xx) cause immediate exit with status code 1
-- State file is automatically created in the same directory as the script
+- `requests`, `requests_oauthlib` for API
+- `curses` for TUI (stdlib)

@@ -11,11 +11,20 @@ from requests_oauthlib import OAuth1
 from typing import Optional, Dict, Any, List
 
 from config import X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET
-X_API_BASE = "https://api.x.com"
 
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+X_API_BASE = "https://api.x.com"
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".x_cli_state.json")
 
-def client():
+# ============================================================================
+# API CLIENT LAYER
+# ============================================================================
+
+def client() -> OAuth1:
+    """Create OAuth1 client for X API authentication."""
     return OAuth1(
         client_key=X_API_KEY,
         client_secret=X_API_SECRET,
@@ -23,31 +32,34 @@ def client():
         resource_owner_secret=X_ACCESS_TOKEN_SECRET,
     )
 
-def api(path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def api_request(method: str, path: str, params: Optional[Dict[str, Any]] = None,
+                payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Generic API request handler with error handling."""
     url = f"{X_API_BASE.rstrip('/')}{path}"
-    r = requests.get(url, auth=client(), params=params, timeout=20)
+
+    if method == "GET":
+        r = requests.get(url, auth=client(), params=params, timeout=20)
+    elif method == "POST":
+        r = requests.post(url, auth=client(), json=payload, timeout=20)
+    else:
+        raise ValueError(f"Unsupported HTTP method: {method}")
+
     if r.status_code >= 400:
         try:
             body = r.json()
         except Exception:
             body = {"raw": r.text}
-        sys.stderr.write(f"HTTP {r.status_code}: {json.dumps(body, ensure_ascii=False)}\n")
-        sys.exit(1)
+        error_msg = f"HTTP {r.status_code}: {json.dumps(body, ensure_ascii=False)}"
+        raise Exception(error_msg)
+
     return r.json()
 
-def api_post(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    url = f"{X_API_BASE.rstrip('/')}{path}"
-    r = requests.post(url, auth=client(), json=payload, timeout=20)
-    if r.status_code >= 400:
-        try:
-            body = r.json()
-        except Exception:
-            body = {"raw": r.text}
-        sys.stderr.write(f"HTTP {r.status_code}: {json.dumps(body, ensure_ascii=False)}\n")
-        sys.exit(1)
-    return r.json()
+# ============================================================================
+# STATE MANAGEMENT
+# ============================================================================
 
 def load_state() -> Dict[str, Any]:
+    """Load persistent state from disk."""
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
@@ -56,32 +68,38 @@ def load_state() -> Dict[str, Any]:
             return {}
     return {}
 
-def save_state(s: Dict[str, Any]) -> None:
+def save_state(state: Dict[str, Any]) -> None:
+    """Save persistent state to disk."""
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(s, f, ensure_ascii=False, indent=2)
+            json.dump(state, f, ensure_ascii=False, indent=2)
     except Exception as e:
         sys.stderr.write(f"Warning: could not write state file: {e}\n")
 
-def get_me() -> Dict[str, Any]:
-    # Returns {"data": {"id": "...", "name": "...", "username": "..." }}
-    return api("/2/users/me", params={"user.fields": "username"})
+# ============================================================================
+# API OPERATIONS
+# ============================================================================
 
-def post_tweet(text: str, reply_to_id: Optional[str] = None) -> Dict[str, Any]:
+def get_authenticated_user() -> Dict[str, Any]:
+    """Get the authenticated user's information."""
+    return api_request("GET", "/2/users/me", params={"user.fields": "username"})
+
+def create_tweet(text: str, reply_to_id: Optional[str] = None) -> Dict[str, Any]:
+    """Post a tweet, optionally as a reply."""
     payload = {"text": text}
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
-    return api_post("/2/tweets", payload)
+    return api_request("POST", "/2/tweets", payload=payload)
 
-def list_mentions(only_unread: bool, max_results: int) -> Dict[str, Any]:
-    me = get_me()["data"]
+def fetch_mentions(only_unread: bool = False, max_results: int = 20) -> List[Dict[str, Any]]:
+    """Fetch mentions for the authenticated user."""
+    me = get_authenticated_user()["data"]
     uid = me["id"]
     state = load_state()
     since_id = state.get("mentions_since_id") if only_unread else None
 
     params = {
         "max_results": max(5, min(max_results, 100)),
-        # expansions to get context
         "expansions": "author_id,in_reply_to_user_id,referenced_tweets.id",
         "tweet.fields": "created_at,conversation_id,in_reply_to_user_id,public_metrics,referenced_tweets",
         "user.fields": "username,name",
@@ -89,115 +107,214 @@ def list_mentions(only_unread: bool, max_results: int) -> Dict[str, Any]:
     if since_id:
         params["since_id"] = since_id
 
-    resp = api(f"/2/users/{uid}/mentions", params=params)
+    resp = api_request("GET", f"/2/users/{uid}/mentions", params=params)
 
-    # Update state with newest mention id so next run can be "unread"
+    # Update state with newest mention ID
     data = resp.get("data", [])
     if data:
         newest_id = data[0]["id"]
         state["mentions_since_id"] = newest_id
         save_state(state)
 
-    # Compact output: resolve author usernames
+    # Resolve author information
     users_index = {u["id"]: u for u in resp.get("includes", {}).get("users", [])}
-    out: List[Dict[str, Any]] = []
-    for t in data:
-        author = users_index.get(t.get("author_id"), {})
-        out.append({
-            "id": t["id"],
-            "at": t.get("created_at"),
-            "from": {"id": author.get("id"), "username": author.get("username"), "name": author.get("name")},
-            "text": t.get("text"),
-            "metrics": t.get("public_metrics", {}),
-            "in_reply_to_user_id": t.get("in_reply_to_user_id"),
-            "conversation_id": t.get("conversation_id"),
+    mentions = []
+    for tweet in data:
+        author = users_index.get(tweet.get("author_id"), {})
+        mentions.append({
+            "id": tweet["id"],
+            "at": tweet.get("created_at"),
+            "from": {
+                "id": author.get("id"),
+                "username": author.get("username"),
+                "name": author.get("name")
+            },
+            "text": tweet.get("text"),
+            "metrics": tweet.get("public_metrics", {}),
+            "in_reply_to_user_id": tweet.get("in_reply_to_user_id"),
+            "conversation_id": tweet.get("conversation_id"),
         })
-    return {"user": me, "mentions": out}
 
-def list_engagements(limit: int) -> Dict[str, Any]:
-    me = get_me()["data"]
+    return mentions
+
+def fetch_user_tweets(limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch recent tweets from the authenticated user."""
+    me = get_authenticated_user()["data"]
     uid = me["id"]
-    # Pull your recent tweets with public metrics
+
     params = {
         "max_results": max(5, min(limit, 100)),
         "tweet.fields": "created_at,public_metrics",
-        # We want originals + replies; exclude retweets is optional. Keep all for signal.
-        # "exclude": "retweets"  # uncomment to suppress RTs you posted
     }
-    resp = api(f"/2/users/{uid}/tweets", params=params)
+
+    resp = api_request("GET", f"/2/users/{uid}/tweets", params=params)
     tweets = resp.get("data", [])
-    compact = [{
+
+    return [{
         "id": t["id"],
         "at": t.get("created_at"),
         "text": t.get("text"),
         "metrics": t.get("public_metrics", {}),
     } for t in tweets]
-    return {"user": me, "tweets": compact}
+
+# ============================================================================
+# UTILITIES
+# ============================================================================
 
 def format_timestamp(iso_str: str) -> str:
-    """Convert ISO timestamp to human-readable format"""
+    """Convert ISO timestamp to human-readable format."""
     try:
         dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
         return dt.strftime("%b %d, %Y %I:%M %p")
     except Exception:
         return iso_str
 
-def interactive_mentions(stdscr, limit: int):
-    """Interactive TUI for browsing and replying to mentions"""
-    curses.curs_set(0)  # Hide cursor
-    stdscr.clear()
+# ============================================================================
+# TUI COMPONENTS
+# ============================================================================
 
-    # Fetch mentions
-    stdscr.addstr(0, 0, "Fetching mentions...")
+def render_mention_list(stdscr, mentions: List[Dict[str, Any]], current_idx: int):
+    """Render the mention list screen."""
+    stdscr.clear()
+    height, width = stdscr.getmaxyx()
+
+    # Header
+    stdscr.addstr(0, 0, "Mentions (↑/↓ to navigate, ENTER to reply, q to quit)", curses.A_BOLD)
+    stdscr.addstr(1, 0, "─" * min(width - 1, 80))
+
+    # Mention list
+    start_line = 2
+    for i, mention in enumerate(mentions):
+        if start_line + i >= height - 1:
+            break
+
+        author = mention.get("from", {})
+        username = author.get("username", "unknown")
+        timestamp = format_timestamp(mention.get("at", ""))
+        text = mention.get("text", "")
+
+        prefix = "> " if i == current_idx else "  "
+        line = f"{prefix}@{username} [{timestamp}]: {text}"
+
+        if len(line) > width - 1:
+            line = line[:width - 4] + "..."
+
+        attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
+        try:
+            stdscr.addstr(start_line + i, 0, line, attr)
+        except curses.error:
+            pass
+
     stdscr.refresh()
 
-    resp = list_mentions(only_unread=False, max_results=limit)
-    mentions = resp.get("mentions", [])
+def get_reply_input(stdscr, mention: Dict[str, Any]) -> Optional[str]:
+    """Show reply composition screen and get user input."""
+    curses.echo()
+    curses.curs_set(1)
 
-    if not mentions:
-        stdscr.clear()
-        stdscr.addstr(0, 0, "No mentions found. Press any key to exit.")
+    stdscr.clear()
+    height, width = stdscr.getmaxyx()
+
+    # Display tweet being replied to
+    author = mention.get("from", {})
+    username = author.get("username", "unknown")
+    timestamp = format_timestamp(mention.get("at", ""))
+    text = mention.get("text", "")
+
+    stdscr.addstr(0, 0, "Replying to:", curses.A_BOLD)
+    stdscr.addstr(1, 0, f"@{username} [{timestamp}]")
+    stdscr.addstr(2, 0, "─" * min(width - 1, 80))
+
+    # Word-wrap tweet text
+    y_offset = 3
+    words = text.split()
+    current_line = ""
+    for word in words:
+        if len(current_line) + len(word) + 1 <= width - 1:
+            current_line += word + " "
+        else:
+            if y_offset < height - 5:
+                stdscr.addstr(y_offset, 0, current_line.strip())
+                y_offset += 1
+            current_line = word + " "
+    if current_line and y_offset < height - 5:
+        stdscr.addstr(y_offset, 0, current_line.strip())
+        y_offset += 1
+
+    y_offset += 1
+    stdscr.addstr(y_offset, 0, "─" * min(width - 1, 80))
+    y_offset += 1
+    stdscr.addstr(y_offset, 0, "Your reply (ENTER to send, ESC to cancel):")
+    y_offset += 1
+
+    stdscr.refresh()
+
+    # Get input
+    reply_input = ""
+    cursor_pos = 0
+
+    while True:
+        try:
+            stdscr.move(y_offset, cursor_pos)
+            stdscr.clrtoeol()
+            stdscr.addstr(y_offset, 0, reply_input)
+            stdscr.move(y_offset, cursor_pos)
+        except curses.error:
+            pass
+
         stdscr.refresh()
-        stdscr.getch()
-        return
+        ch = stdscr.getch()
 
+        if ch == 27:  # ESC
+            curses.noecho()
+            curses.curs_set(0)
+            return None
+        elif ch == ord('\n'):  # ENTER
+            curses.noecho()
+            curses.curs_set(0)
+            return reply_input.strip()
+        elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
+            if cursor_pos > 0:
+                reply_input = reply_input[:cursor_pos-1] + reply_input[cursor_pos:]
+                cursor_pos -= 1
+        elif ch == curses.KEY_LEFT:
+            if cursor_pos > 0:
+                cursor_pos -= 1
+        elif ch == curses.KEY_RIGHT:
+            if cursor_pos < len(reply_input):
+                cursor_pos += 1
+        elif 32 <= ch <= 126:  # Printable characters
+            reply_input = reply_input[:cursor_pos] + chr(ch) + reply_input[cursor_pos:]
+            cursor_pos += 1
+
+def show_success_message(stdscr, message: str, tweet_id: str):
+    """Display success message after sending a reply."""
+    stdscr.clear()
+    stdscr.addstr(0, 0, message, curses.A_BOLD)
+    stdscr.addstr(1, 0, f"Tweet ID: {tweet_id}")
+    stdscr.addstr(3, 0, "Press any key to exit...")
+    stdscr.refresh()
+    stdscr.getch()
+
+def show_error_message(stdscr, error: str):
+    """Display error message in TUI."""
+    stdscr.clear()
+    stdscr.addstr(0, 0, f"Error: {error}", curses.A_BOLD)
+    stdscr.addstr(2, 0, "Press any key to continue...")
+    stdscr.refresh()
+    stdscr.getch()
+
+# ============================================================================
+# TUI CONTROLLER
+# ============================================================================
+
+def interactive_mentions_controller(stdscr, mentions: List[Dict[str, Any]]):
+    """Main controller for interactive mentions TUI."""
+    curses.curs_set(0)
     current_idx = 0
 
     while True:
-        stdscr.clear()
-        height, width = stdscr.getmaxyx()
-
-        # Display header
-        stdscr.addstr(0, 0, "Mentions (↑/↓ to navigate, ENTER to reply, q to quit)", curses.A_BOLD)
-        stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-
-        # Display mentions
-        start_line = 2
-        for i, mention in enumerate(mentions):
-            if start_line + i >= height - 1:
-                break
-
-            author = mention.get("from", {})
-            username = author.get("username", "unknown")
-            timestamp = format_timestamp(mention.get("at", ""))
-            text = mention.get("text", "")
-
-            prefix = "> " if i == current_idx else "  "
-            line = f"{prefix}@{username} [{timestamp}]: {text}"
-
-            # Truncate if too long
-            if len(line) > width - 1:
-                line = line[:width - 4] + "..."
-
-            attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
-            try:
-                stdscr.addstr(start_line + i, 0, line, attr)
-            except curses.error:
-                pass  # Ignore errors from writing to last line
-
-        stdscr.refresh()
-
-        # Handle input
+        render_mention_list(stdscr, mentions, current_idx)
         key = stdscr.getch()
 
         if key == curses.KEY_UP and current_idx > 0:
@@ -207,113 +324,58 @@ def interactive_mentions(stdscr, limit: int):
         elif key == ord('q') or key == ord('Q'):
             break
         elif key == ord('\n'):  # Enter key
-            # Show reply interface
             selected = mentions[current_idx]
-            reply_text = show_reply_screen(stdscr, selected)
+            reply_text = get_reply_input(stdscr, selected)
 
-            if reply_text is not None:  # None means ESC was pressed
-                # Send the reply
+            if reply_text is not None:
                 stdscr.clear()
                 stdscr.addstr(0, 0, "Sending reply...")
                 stdscr.refresh()
 
                 try:
-                    resp = post_tweet(reply_text, reply_to_id=selected["id"])
-                    stdscr.clear()
-                    stdscr.addstr(0, 0, "Reply sent successfully!", curses.A_BOLD)
-                    stdscr.addstr(1, 0, f"Tweet ID: {resp.get('data', {}).get('id', 'unknown')}")
-                    stdscr.addstr(3, 0, "Press any key to exit...")
-                    stdscr.refresh()
-                    stdscr.getch()
+                    resp = create_tweet(reply_text, reply_to_id=selected["id"])
+                    tweet_id = resp.get('data', {}).get('id', 'unknown')
+                    show_success_message(stdscr, "Reply sent successfully!", tweet_id)
                     break
                 except Exception as e:
-                    stdscr.clear()
-                    stdscr.addstr(0, 0, f"Error sending reply: {str(e)}", curses.A_BOLD)
-                    stdscr.addstr(2, 0, "Press any key to continue...")
-                    stdscr.refresh()
-                    stdscr.getch()
+                    show_error_message(stdscr, str(e))
 
-def show_reply_screen(stdscr, mention: Dict[str, Any]) -> Optional[str]:
-    """Show reply composition screen. Returns reply text or None if ESC pressed."""
-    curses.echo()
-    curses.curs_set(1)
+# ============================================================================
+# CLI COMMANDS
+# ============================================================================
 
-    while True:
-        stdscr.clear()
-        height, width = stdscr.getmaxyx()
+def cmd_post(text: str):
+    """CLI command: post a tweet."""
+    resp = create_tweet(text)
+    data = resp.get("data", {})
+    print(json.dumps({"id": data.get("id"), "text": data.get("text")}, ensure_ascii=False))
 
-        # Display the tweet being replied to
-        author = mention.get("from", {})
-        username = author.get("username", "unknown")
-        timestamp = format_timestamp(mention.get("at", ""))
-        text = mention.get("text", "")
+def cmd_mentions(show_all: bool, limit: int):
+    """CLI command: list mentions."""
+    me = get_authenticated_user()["data"]
+    mentions = fetch_mentions(only_unread=(not show_all), max_results=limit)
+    print(json.dumps({"user": me, "mentions": mentions}, ensure_ascii=False, indent=2))
 
-        stdscr.addstr(0, 0, "Replying to:", curses.A_BOLD)
-        stdscr.addstr(1, 0, f"@{username} [{timestamp}]")
-        stdscr.addstr(2, 0, "─" * min(width - 1, 80))
+def cmd_engagements(limit: int):
+    """CLI command: show engagement metrics."""
+    me = get_authenticated_user()["data"]
+    tweets = fetch_user_tweets(limit=limit)
+    print(json.dumps({"user": me, "tweets": tweets}, ensure_ascii=False, indent=2))
 
-        # Display tweet text (word-wrapped)
-        y_offset = 3
-        words = text.split()
-        current_line = ""
-        for word in words:
-            if len(current_line) + len(word) + 1 <= width - 1:
-                current_line += word + " "
-            else:
-                if y_offset < height - 5:
-                    stdscr.addstr(y_offset, 0, current_line.strip())
-                    y_offset += 1
-                current_line = word + " "
-        if current_line and y_offset < height - 5:
-            stdscr.addstr(y_offset, 0, current_line.strip())
-            y_offset += 1
+def cmd_interact(limit: int):
+    """CLI command: interactive mention browser."""
+    print("Fetching mentions...")
+    mentions = fetch_mentions(only_unread=False, max_results=limit)
 
-        y_offset += 1
-        stdscr.addstr(y_offset, 0, "─" * min(width - 1, 80))
-        y_offset += 1
-        stdscr.addstr(y_offset, 0, "Your reply (ENTER to send, ESC to cancel):")
-        y_offset += 1
+    if not mentions:
+        print("No mentions found.")
+        return
 
-        stdscr.refresh()
+    curses.wrapper(interactive_mentions_controller, mentions)
 
-        # Get reply input
-        curses.curs_set(1)
-        reply_input = ""
-        cursor_pos = 0
-
-        while True:
-            try:
-                stdscr.move(y_offset, cursor_pos)
-                stdscr.clrtoeol()
-                stdscr.addstr(y_offset, 0, reply_input)
-                stdscr.move(y_offset, cursor_pos)
-            except curses.error:
-                pass
-
-            stdscr.refresh()
-            ch = stdscr.getch()
-
-            if ch == 27:  # ESC
-                curses.noecho()
-                curses.curs_set(0)
-                return None
-            elif ch == ord('\n'):  # ENTER
-                curses.noecho()
-                curses.curs_set(0)
-                return reply_input.strip()
-            elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
-                if cursor_pos > 0:
-                    reply_input = reply_input[:cursor_pos-1] + reply_input[cursor_pos:]
-                    cursor_pos -= 1
-            elif ch == curses.KEY_LEFT:
-                if cursor_pos > 0:
-                    cursor_pos -= 1
-            elif ch == curses.KEY_RIGHT:
-                if cursor_pos < len(reply_input):
-                    cursor_pos += 1
-            elif 32 <= ch <= 126:  # Printable characters
-                reply_input = reply_input[:cursor_pos] + chr(ch) + reply_input[cursor_pos:]
-                cursor_pos += 1
+# ============================================================================
+# MAIN
+# ============================================================================
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="x.py", description="Minimal X API v2 CLI")
@@ -334,19 +396,21 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
 
-    if args.cmd == "post":
-        resp = post_tweet(args.text)
-        data = resp.get("data", {})
-        print(json.dumps({"id": data.get("id"), "text": data.get("text")}, ensure_ascii=False))
-    elif args.cmd == "mentions":
-        resp = list_mentions(only_unread=(not args.all), max_results=args.limit)
-        print(json.dumps(resp, ensure_ascii=False, indent=2))
-    elif args.cmd == "engagements":
-        resp = list_engagements(limit=args.limit)
-        print(json.dumps(resp, ensure_ascii=False, indent=2))
-    elif args.cmd == "interact":
-        curses.wrapper(interactive_mentions, args.limit)
+    try:
+        if args.cmd == "post":
+            cmd_post(args.text)
+        elif args.cmd == "mentions":
+            cmd_mentions(args.all, args.limit)
+        elif args.cmd == "engagements":
+            cmd_engagements(args.limit)
+        elif args.cmd == "interact":
+            cmd_interact(args.limit)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
-
