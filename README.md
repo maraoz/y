@@ -33,6 +33,9 @@ Get credentials from the [X Developer Portal](https://developer.x.com/).
 # Interactive UI to browse and reply to mentions
 ./x.py interact
 
+# Interactive UI to build threads from your tweets
+./x.py thread
+
 # View engagement metrics
 ./x.py engagements
 ```
@@ -40,6 +43,7 @@ Get credentials from the [X Developer Portal](https://developer.x.com/).
 ## How it works
 
 - **mentions**: Tracks unread mentions using a local state file
-- **interact**: Curses-based TUI with arrow key navigation and inline replies
+- **interact**: Curses-based TUI with arrow key navigation to reply to mentions
+- **thread**: Curses-based TUI to reply to your own tweets (build threads)
 - **engagements**: Shows public metrics for your recent tweets
 - **post**: Publishes tweets with optional reply threading

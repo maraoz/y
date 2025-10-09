@@ -21,10 +21,11 @@ X_ACCESS_TOKEN_SECRET = "..."
 ## Commands
 
 ```bash
-./x.py post "text"              # Post tweet
+./x.py post "text"                   # Post tweet
 ./x.py mentions [--all] [--limit N]  # List mentions
-./x.py engagements [--limit N]  # View metrics
-./x.py interact [--limit N]     # Interactive TUI
+./x.py engagements [--limit N]       # View metrics
+./x.py interact [--limit N]          # Interactive TUI to reply to mentions
+./x.py thread [--limit N]            # Interactive TUI to build threads
 ```
 
 ## Code Structure

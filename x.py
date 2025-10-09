@@ -137,7 +137,7 @@ def fetch_mentions(only_unread: bool = False, max_results: int = 20) -> List[Dic
 
     return mentions
 
-def fetch_user_tweets(limit: int = 10) -> List[Dict[str, Any]]:
+def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dict[str, Any]]:
     """Fetch recent tweets from the authenticated user."""
     me = get_authenticated_user()["data"]
     uid = me["id"]
@@ -150,12 +150,24 @@ def fetch_user_tweets(limit: int = 10) -> List[Dict[str, Any]]:
     resp = api_request("GET", f"/2/users/{uid}/tweets", params=params)
     tweets = resp.get("data", [])
 
-    return [{
-        "id": t["id"],
-        "at": t.get("created_at"),
-        "text": t.get("text"),
-        "metrics": t.get("public_metrics", {}),
-    } for t in tweets]
+    result = []
+    for t in tweets:
+        tweet_data = {
+            "id": t["id"],
+            "at": t.get("created_at"),
+            "text": t.get("text"),
+            "metrics": t.get("public_metrics", {}),
+        }
+        # Add author info if needed (for TUI compatibility)
+        if include_author:
+            tweet_data["from"] = {
+                "id": me["id"],
+                "username": me.get("username"),
+                "name": me.get("name"),
+            }
+        result.append(tweet_data)
+
+    return result
 
 # ============================================================================
 # UTILITIES
@@ -173,25 +185,25 @@ def format_timestamp(iso_str: str) -> str:
 # TUI COMPONENTS
 # ============================================================================
 
-def render_mention_list(stdscr, mentions: List[Dict[str, Any]], current_idx: int):
-    """Render the mention list screen."""
+def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, header: str = "Tweets"):
+    """Render a list of tweets (generic for mentions or own tweets)."""
     stdscr.clear()
     height, width = stdscr.getmaxyx()
 
     # Header
-    stdscr.addstr(0, 0, "Mentions (↑/↓ to navigate, ENTER to reply, q to quit)", curses.A_BOLD)
+    stdscr.addstr(0, 0, f"{header} (↑/↓ to navigate, ENTER to reply, q to quit)", curses.A_BOLD)
     stdscr.addstr(1, 0, "─" * min(width - 1, 80))
 
-    # Mention list
+    # Tweet list
     start_line = 2
-    for i, mention in enumerate(mentions):
+    for i, tweet in enumerate(tweets):
         if start_line + i >= height - 1:
             break
 
-        author = mention.get("from", {})
+        author = tweet.get("from", {})
         username = author.get("username", "unknown")
-        timestamp = format_timestamp(mention.get("at", ""))
-        text = mention.get("text", "")
+        timestamp = format_timestamp(tweet.get("at", ""))
+        text = tweet.get("text", "")
 
         prefix = "> " if i == current_idx else "  "
         line = f"{prefix}@{username} [{timestamp}]: {text}"
@@ -207,7 +219,7 @@ def render_mention_list(stdscr, mentions: List[Dict[str, Any]], current_idx: int
 
     stdscr.refresh()
 
-def get_reply_input(stdscr, mention: Dict[str, Any]) -> Optional[str]:
+def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying to") -> Optional[str]:
     """Show reply composition screen and get user input."""
     curses.echo()
     curses.curs_set(1)
@@ -216,12 +228,12 @@ def get_reply_input(stdscr, mention: Dict[str, Any]) -> Optional[str]:
     height, width = stdscr.getmaxyx()
 
     # Display tweet being replied to
-    author = mention.get("from", {})
+    author = tweet.get("from", {})
     username = author.get("username", "unknown")
-    timestamp = format_timestamp(mention.get("at", ""))
-    text = mention.get("text", "")
+    timestamp = format_timestamp(tweet.get("at", ""))
+    text = tweet.get("text", "")
 
-    stdscr.addstr(0, 0, "Replying to:", curses.A_BOLD)
+    stdscr.addstr(0, 0, f"{action_label}:", curses.A_BOLD)
     stdscr.addstr(1, 0, f"@{username} [{timestamp}]")
     stdscr.addstr(2, 0, "─" * min(width - 1, 80))
 
@@ -308,24 +320,24 @@ def show_error_message(stdscr, error: str):
 # TUI CONTROLLER
 # ============================================================================
 
-def interactive_mentions_controller(stdscr, mentions: List[Dict[str, Any]]):
-    """Main controller for interactive mentions TUI."""
+def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: str = "Tweets", action_label: str = "Replying to"):
+    """Main controller for interactive tweet browsing TUI (works for mentions or own tweets)."""
     curses.curs_set(0)
     current_idx = 0
 
     while True:
-        render_mention_list(stdscr, mentions, current_idx)
+        render_tweet_list(stdscr, tweets, current_idx, header)
         key = stdscr.getch()
 
         if key == curses.KEY_UP and current_idx > 0:
             current_idx -= 1
-        elif key == curses.KEY_DOWN and current_idx < len(mentions) - 1:
+        elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
             current_idx += 1
         elif key == ord('q') or key == ord('Q'):
             break
         elif key == ord('\n'):  # Enter key
-            selected = mentions[current_idx]
-            reply_text = get_reply_input(stdscr, selected)
+            selected = tweets[current_idx]
+            reply_text = get_reply_input(stdscr, selected, action_label)
 
             if reply_text is not None:
                 stdscr.clear()
@@ -371,7 +383,18 @@ def cmd_interact(limit: int):
         print("No mentions found.")
         return
 
-    curses.wrapper(interactive_mentions_controller, mentions)
+    curses.wrapper(interactive_tweet_controller, mentions, "Mentions", "Replying to")
+
+def cmd_thread(limit: int):
+    """CLI command: interactive thread builder for own tweets."""
+    print("Fetching your tweets...")
+    tweets = fetch_user_tweets(limit=limit, include_author=True)
+
+    if not tweets:
+        print("No tweets found.")
+        return
+
+    curses.wrapper(interactive_tweet_controller, tweets, "Your Tweets", "Threading")
 
 # ============================================================================
 # MAIN
@@ -394,6 +417,9 @@ def main(argv=None):
     p_interact = sub.add_parser("interact", help="Interactive UI to browse and reply to mentions")
     p_interact.add_argument("--limit", type=int, default=5, help="How many recent mentions to fetch (5-100)")
 
+    p_thread = sub.add_parser("thread", help="Interactive UI to build threads from your own tweets")
+    p_thread.add_argument("--limit", type=int, default=10, help="How many recent tweets to fetch (5-100)")
+
     args = parser.parse_args(argv)
 
     try:
@@ -405,6 +431,8 @@ def main(argv=None):
             cmd_engagements(args.limit)
         elif args.cmd == "interact":
             cmd_interact(args.limit)
+        elif args.cmd == "thread":
+            cmd_thread(args.limit)
     except KeyboardInterrupt:
         print("\nInterrupted by user")
         sys.exit(0)
