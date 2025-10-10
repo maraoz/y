@@ -316,7 +316,7 @@ def image_to_ascii(image_path: str, width: int = 40) -> List[str]:
         img = img.convert('L')
 
         # Convert to ASCII
-        pixels = img.getdata()
+        pixels = list(img.getdata())
         ascii_art = []
         for i in range(0, len(pixels), width):
             row = pixels[i:i+width]
