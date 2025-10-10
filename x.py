@@ -499,8 +499,8 @@ def main_menu_controller(stdscr) -> Optional[str]:
 
     commands = [
         ("mentions", "List mentions"),
-        ("interact", "Reply to mentions (interactive)"),
-        ("thread", "Build threads (interactive)"),
+        ("interact", "Reply to mentions"),
+        ("thread", "Build threads"),
         ("timeline", "View timeline"),
         ("engagement", "View engagement metrics"),
         ("post", "Post a tweet"),
@@ -815,10 +815,10 @@ def main(argv=None):
     p_eng = sub.add_parser("engagement", help="Show engagement metrics for your recent tweets")
     p_eng.add_argument("--limit", type=int, default=10, help="How many recent tweets to fetch (5-100)")
 
-    p_interact = sub.add_parser("interact", help="Interactive UI to browse and reply to mentions")
+    p_interact = sub.add_parser("interact", help="Browse and reply to mentions")
     p_interact.add_argument("--limit", type=int, default=5, help="How many recent mentions to fetch (5-100)")
 
-    p_thread = sub.add_parser("thread", help="Interactive UI to build threads from your own tweets")
+    p_thread = sub.add_parser("thread", help="Build threads from your own tweets")
     p_thread.add_argument("--limit", type=int, default=10, help="How many recent tweets to fetch (5-100)")
 
     p_timeline = sub.add_parser("timeline", help="List recent tweets from your timeline")

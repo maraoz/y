@@ -34,15 +34,15 @@ Navigate with arrow keys, press Enter to select.
 ./x.py post                         # Post a tweet (prompts for text in TUI)
 ./x.py post "Hello world"           # Post a tweet directly
 ./x.py mentions                     # List mentions
-./x.py interact                     # Reply to mentions (interactive)
-./x.py thread                       # Build threads (interactive)
+./x.py interact                     # Reply to mentions
+./x.py thread                       # Build threads
 ./x.py timeline                     # View timeline
 ./x.py engagement                   # View engagement metrics
 ```
 
 ## How it works
 
-All commands use interactive TUI with arrow key navigation:
+All commands use TUI with arrow key navigation:
 
 - **mentions**: Browse mentions, press ENTER for details (tracks unread)
 - **interact**: Browse mentions and reply to them
