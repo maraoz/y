@@ -334,15 +334,15 @@ def image_to_ascii(image_path: str, width: int = 40) -> List[str]:
 # TUI COMPONENTS
 # ============================================================================
 
-def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, header: str = "Tweets", show_detail_hint: bool = False):
+def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, header: str = "tweets", show_detail_hint: bool = False):
     """Render a list of tweets (generic for mentions or own tweets)."""
     stdscr.clear()
     height, width = stdscr.getmaxyx()
 
     # Header
-    hint = "ENTER to view details" if show_detail_hint else "ENTER to reply"
-    stdscr.addstr(0, 0, f"{header} (↑/↓ to navigate, {hint}, q to quit)", curses.A_BOLD)
-    stdscr.addstr(1, 0, "─" * min(width - 1, 80))
+    hint = "enter view" if show_detail_hint else "enter reply"
+    stdscr.addstr(0, 0, f"{header}", curses.A_BOLD)
+    stdscr.addstr(1, 0, f"↑↓ navigate · {hint} · q quit", curses.A_DIM)
 
     # Tweet list
     start_line = 2
@@ -395,16 +395,15 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
 
         # Header
         stdscr.addstr(0, 0, prompt, curses.A_BOLD)
-        stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-        stdscr.addstr(2, 0, "(Ctrl+V for image, ENTER for newline, Ctrl+D to submit, ESC to cancel)")
-        # Blank line for spacing
+        stdscr.addstr(1, 0, "")
+        stdscr.addstr(2, 0, "ctrl+v image · enter newline · ctrl+d send · esc cancel", curses.A_DIM)
         stdscr.addstr(3, 0, "")
 
         # Image indicator
         if attached_media_ids:
             count = len(attached_media_ids)
-            text = f"📷 {count} image{'s' if count > 1 else ''} attached"
-            stdscr.addstr(4, 0, text, curses.A_BOLD | curses.color_pair(0))
+            text = f"📷 {count}" if count > 1 else "📷"
+            stdscr.addstr(4, 0, text, curses.A_DIM)
 
         # Calculate start position for text input
         text_start_y = start_y + 2  # Space for instructions and image indicator
@@ -543,7 +542,7 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
             lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
             cursor_col += 1
 
-def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying to") -> Optional[str]:
+def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying to") -> Optional[str]:
     """Show reply composition screen and get multiline user input."""
     curses.noecho()
     curses.curs_set(1)
@@ -557,9 +556,9 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying
     timestamp = format_timestamp(tweet.get("at", ""))
     text = tweet.get("text", "")
 
-    stdscr.addstr(0, 0, f"{action_label}:", curses.A_BOLD)
-    stdscr.addstr(1, 0, f"@{username} [{timestamp}]")
-    stdscr.addstr(2, 0, "─" * min(width - 1, 80))
+    stdscr.addstr(0, 0, f"{action_label}", curses.A_BOLD)
+    stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
+    stdscr.addstr(2, 0, "")
 
     # Word-wrap tweet text
     y_offset = 3
@@ -578,9 +577,9 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying
         y_offset += 1
 
     y_offset += 1
-    stdscr.addstr(y_offset, 0, "─" * min(width - 1, 80))
+    stdscr.addstr(y_offset, 0, "")
     y_offset += 1
-    stdscr.addstr(y_offset, 0, "Your reply (ENTER for newline, Ctrl+D to send, ESC to cancel):")
+    stdscr.addstr(y_offset, 0, "enter newline · ctrl+d send · esc cancel", curses.A_DIM)
     y_offset += 1
 
     start_y = y_offset
@@ -669,17 +668,19 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying
 def show_success_message(stdscr, message: str, tweet_id: str):
     """Display success message after sending a reply."""
     stdscr.clear()
-    stdscr.addstr(0, 0, message, curses.A_BOLD)
-    stdscr.addstr(1, 0, f"Tweet ID: {tweet_id}")
-    stdscr.addstr(3, 0, "Press any key to exit...")
+    stdscr.addstr(0, 0, "✓", curses.A_BOLD)
+    stdscr.addstr(1, 0, message, curses.A_DIM)
+    stdscr.addstr(2, 0, f"{tweet_id}", curses.A_DIM)
+    stdscr.addstr(4, 0, "press any key", curses.A_DIM)
     stdscr.refresh()
     stdscr.getch()
 
 def show_error_message(stdscr, error: str):
     """Display error message in TUI."""
     stdscr.clear()
-    stdscr.addstr(0, 0, f"Error: {error}", curses.A_BOLD)
-    stdscr.addstr(2, 0, "Press any key to continue...")
+    stdscr.addstr(0, 0, "✗", curses.A_BOLD)
+    stdscr.addstr(1, 0, f"{error}", curses.A_DIM)
+    stdscr.addstr(3, 0, "press any key", curses.A_DIM)
     stdscr.refresh()
     stdscr.getch()
 
@@ -693,12 +694,12 @@ def main_menu_controller(stdscr) -> Optional[str]:
     stdscr.clear()
 
     commands = [
-        ("interact", "Mentions"),
-        ("thread", "Build threads"),
-        ("timeline", "View timeline"),
-        ("engagement", "View engagement metrics"),
-        ("post", "Post a tweet"),
-        ("quit", "Exit"),
+        ("post", "write"),
+        ("interact", "mentions"),
+        ("thread", "thread"),
+        ("timeline", "read"),
+        ("engagement", "ego"),
+        ("quit", "exit"),
     ]
 
     current_idx = 0
@@ -708,9 +709,9 @@ def main_menu_controller(stdscr) -> Optional[str]:
         height, width = stdscr.getmaxyx()
 
         # Header
-        stdscr.addstr(0, 0, "X CLI - Main Menu", curses.A_BOLD)
-        stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-        stdscr.addstr(2, 0, "Use ↑/↓ to navigate, ENTER to select, q to quit")
+        stdscr.addstr(0, 0, "x", curses.A_BOLD)
+        stdscr.addstr(1, 0, "")
+        stdscr.addstr(2, 0, "↑↓ navigate · enter select · q quit", curses.A_DIM)
         stdscr.addstr(3, 0, "")
 
         # Command list
@@ -764,10 +765,10 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
             text = tweet.get("text", "")
             metrics = tweet.get("metrics", {})
 
-            stdscr.addstr(0, 0, f"Tweet {current_idx + 1}/{len(tweets)}", curses.A_BOLD)
-            stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-            stdscr.addstr(2, 0, f"@{username}")
-            stdscr.addstr(3, 0, f"[{timestamp}]")
+            stdscr.addstr(0, 0, f"{current_idx + 1}/{len(tweets)}", curses.A_BOLD)
+            stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
+            stdscr.addstr(2, 0, "")
+            stdscr.addstr(3, 0, "")
             stdscr.addstr(4, 0, "")
 
             # Word-wrap tweet text
@@ -788,14 +789,14 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
 
             # Metrics
             y_offset += 1
-            stdscr.addstr(y_offset, 0, "─" * min(width - 1, 80))
+            stdscr.addstr(y_offset, 0, "")
             y_offset += 1
             likes = metrics.get("like_count", 0)
             retweets = metrics.get("retweet_count", 0)
             replies = metrics.get("reply_count", 0)
-            stdscr.addstr(y_offset, 0, f"❤️  {likes}  🔁 {retweets}  💬 {replies}")
+            stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
 
-            stdscr.addstr(height - 2, 0, "ESC: back to list, ↑/↓: navigate, q: quit", curses.A_DIM)
+            stdscr.addstr(height - 2, 0, "esc back · ↑↓ navigate · q quit", curses.A_DIM)
             stdscr.refresh()
 
             key = stdscr.getch()
@@ -862,20 +863,20 @@ def cmd_post(text: Optional[str] = None):
     if text is None:
         # Interactive mode - get text via TUI
         def post_tui(stdscr):
-            result = get_text_input(stdscr, "Post a tweet")
+            result = get_text_input(stdscr, "write")
             if result is None:
                 return None
 
             tweet_text, media_ids = result
 
             stdscr.clear()
-            stdscr.addstr(0, 0, "Posting tweet...")
+            stdscr.addstr(0, 0, "sending...", curses.A_DIM)
             stdscr.refresh()
 
             try:
                 resp = create_tweet(tweet_text, media_ids=media_ids)
                 tweet_id = resp.get('data', {}).get('id', 'unknown')
-                show_success_message(stdscr, "Tweet posted successfully!", tweet_id)
+                show_success_message(stdscr, "posted", tweet_id)
                 return resp
             except Exception as e:
                 show_error_message(stdscr, str(e))
@@ -892,20 +893,20 @@ def cmd_mentions(show_all: bool, limit: int):
     """CLI command: list mentions (interactive)."""
     def mentions_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "Fetching mentions...")
+        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
         stdscr.refresh()
 
         mentions = fetch_mentions(only_unread=(not show_all), max_results=limit)
 
         if not mentions:
             stdscr.clear()
-            stdscr.addstr(0, 0, "No mentions found.")
-            stdscr.addstr(2, 0, "Press any key to exit...")
+            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
+            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
             stdscr.refresh()
             stdscr.getch()
             return
 
-        browse_tweets_controller(stdscr, mentions, "Mentions")
+        browse_tweets_controller(stdscr, mentions, "mentions")
 
     curses.wrapper(mentions_tui)
 
@@ -913,20 +914,20 @@ def cmd_engagement(limit: int):
     """CLI command: show engagement metrics (interactive)."""
     def engagement_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "Fetching your tweets...")
+        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
         stdscr.refresh()
 
         tweets = fetch_user_tweets(limit=limit, include_author=True)
 
         if not tweets:
             stdscr.clear()
-            stdscr.addstr(0, 0, "No tweets found.")
-            stdscr.addstr(2, 0, "Press any key to exit...")
+            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
+            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
             stdscr.refresh()
             stdscr.getch()
             return
 
-        browse_tweets_controller(stdscr, tweets, "Your Tweets - Engagement")
+        browse_tweets_controller(stdscr, tweets, "ego")
 
     curses.wrapper(engagement_tui)
 
@@ -934,20 +935,20 @@ def cmd_interact(limit: int):
     """CLI command: interactive mention browser."""
     def interact_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "Fetching mentions...")
+        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
         stdscr.refresh()
 
         mentions = fetch_mentions(only_unread=False, max_results=limit)
 
         if not mentions:
             stdscr.clear()
-            stdscr.addstr(0, 0, "No mentions found.")
-            stdscr.addstr(2, 0, "Press any key to exit...")
+            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
+            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
             stdscr.refresh()
             stdscr.getch()
             return
 
-        interactive_tweet_controller(stdscr, mentions, "Mentions", "Replying to")
+        interactive_tweet_controller(stdscr, mentions, "mentions", "reply")
 
     curses.wrapper(interact_tui)
 
@@ -955,20 +956,20 @@ def cmd_thread(limit: int):
     """CLI command: interactive thread builder for own tweets."""
     def thread_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "Fetching your tweets...")
+        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
         stdscr.refresh()
 
         tweets = fetch_user_tweets(limit=limit, include_author=True)
 
         if not tweets:
             stdscr.clear()
-            stdscr.addstr(0, 0, "No tweets found.")
-            stdscr.addstr(2, 0, "Press any key to exit...")
+            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
+            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
             stdscr.refresh()
             stdscr.getch()
             return
 
-        interactive_tweet_controller(stdscr, tweets, "Your Tweets", "Threading")
+        interactive_tweet_controller(stdscr, tweets, "thread", "continue")
 
     curses.wrapper(thread_tui)
 
@@ -976,20 +977,20 @@ def cmd_timeline(limit: int):
     """CLI command: list recent tweets from timeline (interactive)."""
     def timeline_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "Fetching timeline...")
+        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
         stdscr.refresh()
 
         tweets = fetch_timeline(limit=limit)
 
         if not tweets:
             stdscr.clear()
-            stdscr.addstr(0, 0, "No tweets found.")
-            stdscr.addstr(2, 0, "Press any key to exit...")
+            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
+            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
             stdscr.refresh()
             stdscr.getch()
             return
 
-        browse_tweets_controller(stdscr, tweets, "Timeline")
+        browse_tweets_controller(stdscr, tweets, "read")
 
     curses.wrapper(timeline_tui)
 
