@@ -498,8 +498,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
     stdscr.clear()
 
     commands = [
-        ("mentions", "List mentions"),
-        ("interact", "Reply to mentions"),
+        ("interact", "Mentions"),
         ("thread", "Build threads"),
         ("timeline", "View timeline"),
         ("engagement", "View engagement metrics"),
@@ -836,8 +835,6 @@ def main(argv=None):
             # Execute selected command
             if selected == "post":
                 cmd_post()
-            elif selected == "mentions":
-                cmd_mentions(show_all=False, limit=5)
             elif selected == "engagement":
                 cmd_engagement(limit=5)
             elif selected == "interact":
