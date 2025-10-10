@@ -389,7 +389,6 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
     # Image attachment state
     attached_image_path = None
     attached_media_id = None
-    ascii_preview = []
 
     def render_text():
         stdscr.clear()
@@ -406,19 +405,7 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
             stdscr.addstr(4, 0, "📷 Image attached", curses.A_BOLD | curses.color_pair(0))
 
         # Calculate start position for text input
-        text_start_y = start_y + 1  # Adjusted for extra blank line
-
-        # Show ASCII preview if image attached
-        if ascii_preview:
-            preview_y = text_start_y
-            for i, line in enumerate(ascii_preview[:min(10, len(ascii_preview))]):  # Show max 10 lines
-                if preview_y + i >= height - 5:
-                    break
-                try:
-                    stdscr.addstr(preview_y + i, 0, line[:width-1], curses.A_DIM)
-                except curses.error:
-                    pass
-            text_start_y = preview_y + min(10, len(ascii_preview)) + 1
+        text_start_y = start_y + 2  # Space for instructions and image indicator
 
         # Clear text input area
         for i in range(text_start_y, height - 1):
@@ -488,8 +475,6 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                     if media_id:
                         attached_media_id = media_id
                         attached_image_path = image_path
-                        # Generate ASCII preview
-                        ascii_preview = image_to_ascii(image_path, width=min(width-2, 60))
                         stdscr.addstr(2, 0, "✓ Image attached successfully!", curses.A_BOLD)
                     else:
                         stdscr.addstr(2, 0, "✗ Failed to upload image", curses.A_BOLD)
