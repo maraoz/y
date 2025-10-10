@@ -355,11 +355,11 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
         timestamp = format_timestamp(tweet.get("at", ""))
         text = tweet.get("text", "")
 
-        prefix = "> " if i == current_idx else "  "
-        line = f"{prefix}@{username} [{timestamp}]: {text}"
+        prefix = "▸ " if i == current_idx else "◦ "
+        line = f"{prefix}@{username} · {timestamp} · {text}"
 
         if len(line) > width - 1:
-            line = line[:width - 4] + "..."
+            line = line[:width - 4] + "⋯"
 
         attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
         try:
@@ -466,19 +466,19 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
 
             # Check if we've hit the limit
             if len(attached_media_ids) >= 4:
-                stdscr.addstr(0, 0, "✗ Maximum 4 images allowed", curses.A_BOLD)
-                stdscr.addstr(2, 0, "Press any key to continue...")
+                stdscr.addstr(0, 0, "✗ max 4 images", curses.A_BOLD)
+                stdscr.addstr(2, 0, "press any key", curses.A_DIM)
                 stdscr.refresh()
                 stdscr.getch()
                 curses.curs_set(1)
             else:
-                stdscr.addstr(0, 0, "Grabbing image from clipboard...", curses.A_BOLD)
+                stdscr.addstr(0, 0, "grabbing image⋯", curses.A_DIM)
                 stdscr.refresh()
 
                 # Grab image from clipboard
                 image_path = grab_clipboard_image()
                 if image_path:
-                    stdscr.addstr(1, 0, "Uploading image...")
+                    stdscr.addstr(1, 0, "uploading⋯", curses.A_DIM)
                     stdscr.refresh()
 
                     try:
@@ -488,9 +488,9 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                             attached_media_ids.append(media_id)
                             attached_image_paths.append(image_path)
                             count = len(attached_media_ids)
-                            stdscr.addstr(2, 0, f"✓ Image {count} attached successfully!", curses.A_BOLD)
+                            stdscr.addstr(2, 0, f"✓ image {count} attached", curses.A_BOLD)
                         else:
-                            stdscr.addstr(2, 0, "✗ Failed to upload image", curses.A_BOLD)
+                            stdscr.addstr(2, 0, "✗ upload failed", curses.A_BOLD)
                             if os.path.exists(image_path):
                                 os.unlink(image_path)
                     except Exception as e:
@@ -498,10 +498,10 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                         if os.path.exists(image_path):
                             os.unlink(image_path)
                 else:
-                    stdscr.addstr(1, 0, "✗ No image found in clipboard", curses.A_BOLD)
-                    stdscr.addstr(2, 0, "(Make sure 'pngpaste' is installed: brew install pngpaste)")
+                    stdscr.addstr(1, 0, "✗ no image in clipboard", curses.A_BOLD)
+                    stdscr.addstr(2, 0, "install pngpaste: brew install pngpaste", curses.A_DIM)
 
-                stdscr.addstr(3, 0, "Press any key to continue...")
+                stdscr.addstr(3, 0, "press any key", curses.A_DIM)
                 stdscr.refresh()
                 stdscr.getch()
                 curses.curs_set(1)
@@ -542,8 +542,8 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
             lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
             cursor_col += 1
 
-def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying to") -> Optional[str]:
-    """Show reply composition screen and get multiline user input."""
+def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying to") -> Optional[Tuple[str, Optional[List[str]]]]:
+    """Show reply composition screen and get multiline user input with optional image attachment."""
     curses.noecho()
     curses.curs_set(1)
 
@@ -556,34 +556,9 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
     timestamp = format_timestamp(tweet.get("at", ""))
     text = tweet.get("text", "")
 
-    stdscr.addstr(0, 0, f"{action_label}", curses.A_BOLD)
-    stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
-    stdscr.addstr(2, 0, "")
-
-    # Word-wrap tweet text
-    y_offset = 3
-    words = text.split()
-    current_line = ""
-    for word in words:
-        if len(current_line) + len(word) + 1 <= width - 1:
-            current_line += word + " "
-        else:
-            if y_offset < height - 8:
-                stdscr.addstr(y_offset, 0, current_line.strip())
-                y_offset += 1
-            current_line = word + " "
-    if current_line and y_offset < height - 8:
-        stdscr.addstr(y_offset, 0, current_line.strip())
-        y_offset += 1
-
-    y_offset += 1
-    stdscr.addstr(y_offset, 0, "")
-    y_offset += 1
-    stdscr.addstr(y_offset, 0, "enter newline · ctrl+d send · esc cancel", curses.A_DIM)
-    y_offset += 1
-
-    start_y = y_offset
-    stdscr.refresh()
+    # Image attachment state (supports up to 4 images)
+    attached_image_paths = []
+    attached_media_ids = []
 
     # Input handling with multiline support
     lines = [""]
@@ -591,6 +566,44 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
     cursor_col = 0
 
     def render_input():
+        stdscr.clear()
+
+        # Header
+        stdscr.addstr(0, 0, f"{action_label}", curses.A_BOLD)
+        stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
+        stdscr.addstr(2, 0, "")
+
+        # Word-wrap tweet text
+        y_offset = 3
+        words = text.split()
+        current_line = ""
+        for word in words:
+            if len(current_line) + len(word) + 1 <= width - 1:
+                current_line += word + " "
+            else:
+                if y_offset < height - 8:
+                    stdscr.addstr(y_offset, 0, current_line.strip())
+                    y_offset += 1
+                current_line = word + " "
+        if current_line and y_offset < height - 8:
+            stdscr.addstr(y_offset, 0, current_line.strip())
+            y_offset += 1
+
+        y_offset += 1
+        stdscr.addstr(y_offset, 0, "")
+        y_offset += 1
+        stdscr.addstr(y_offset, 0, "ctrl+v image · enter newline · ctrl+d send · esc cancel", curses.A_DIM)
+        y_offset += 1
+
+        # Image indicator
+        if attached_media_ids:
+            count = len(attached_media_ids)
+            img_text = f"📷 {count}" if count > 1 else "📷"
+            stdscr.addstr(y_offset, 0, img_text, curses.A_DIM)
+            y_offset += 1
+
+        start_y = y_offset
+
         # Clear input area
         for i in range(start_y, height - 1):
             stdscr.move(i, 0)
@@ -618,10 +631,70 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
 
         if ch == 27:  # ESC
             curses.curs_set(0)
+            # Clean up temp images
+            for path in attached_image_paths:
+                if os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except:
+                        pass
             return None
         elif ch == 4:  # Ctrl+D - submit
             curses.curs_set(0)
-            return '\n'.join(lines)
+            # Clean up temp images
+            for path in attached_image_paths:
+                if os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except:
+                        pass
+            media_ids = attached_media_ids if attached_media_ids else None
+            return ('\n'.join(lines), media_ids)
+        elif ch == 22:  # Ctrl+V - attach image from clipboard
+            curses.curs_set(0)
+            stdscr.clear()
+
+            # Check if we've hit the limit
+            if len(attached_media_ids) >= 4:
+                stdscr.addstr(0, 0, "✗ max 4 images", curses.A_BOLD)
+                stdscr.addstr(2, 0, "press any key", curses.A_DIM)
+                stdscr.refresh()
+                stdscr.getch()
+                curses.curs_set(1)
+            else:
+                stdscr.addstr(0, 0, "grabbing image⋯", curses.A_DIM)
+                stdscr.refresh()
+
+                # Grab image from clipboard
+                image_path = grab_clipboard_image()
+                if image_path:
+                    stdscr.addstr(1, 0, "uploading⋯", curses.A_DIM)
+                    stdscr.refresh()
+
+                    try:
+                        # Upload to X API
+                        media_id = upload_media(image_path)
+                        if media_id:
+                            attached_media_ids.append(media_id)
+                            attached_image_paths.append(image_path)
+                            count = len(attached_media_ids)
+                            stdscr.addstr(2, 0, f"✓ image {count} attached", curses.A_BOLD)
+                        else:
+                            stdscr.addstr(2, 0, "✗ upload failed", curses.A_BOLD)
+                            if os.path.exists(image_path):
+                                os.unlink(image_path)
+                    except Exception as e:
+                        stdscr.addstr(2, 0, f"✗ Error: {str(e)[:width-10]}", curses.A_BOLD)
+                        if os.path.exists(image_path):
+                            os.unlink(image_path)
+                else:
+                    stdscr.addstr(1, 0, "✗ no image in clipboard", curses.A_BOLD)
+                    stdscr.addstr(2, 0, "install pngpaste: brew install pngpaste", curses.A_DIM)
+
+                stdscr.addstr(3, 0, "press any key", curses.A_DIM)
+                stdscr.refresh()
+                stdscr.getch()
+                curses.curs_set(1)
         elif ch == ord('\n') or ch == 10:  # ENTER or Ctrl+J - newline
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col]
@@ -720,7 +793,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
             if start_line + i >= height - 1:
                 break
 
-            prefix = "> " if i == current_idx else "  "
+            prefix = "▸ " if i == current_idx else "◦ "
             line = f"{prefix}{desc}"
 
             attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
@@ -839,17 +912,18 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
             break
         elif key == ord('\n'):  # Enter key
             selected = tweets[current_idx]
-            reply_text = get_reply_input(stdscr, selected, action_label)
+            result = get_reply_input(stdscr, selected, action_label)
 
-            if reply_text is not None:
+            if result is not None:
+                reply_text, media_ids = result
                 stdscr.clear()
-                stdscr.addstr(0, 0, "Sending reply...")
+                stdscr.addstr(0, 0, "sending⋯")
                 stdscr.refresh()
 
                 try:
-                    resp = create_tweet(reply_text, reply_to_id=selected["id"])
+                    resp = create_tweet(reply_text, reply_to_id=selected["id"], media_ids=media_ids)
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
-                    show_success_message(stdscr, "Reply sent successfully!", tweet_id)
+                    show_success_message(stdscr, "reply sent", tweet_id)
                     break
                 except Exception as e:
                     show_error_message(stdscr, str(e))
@@ -870,7 +944,7 @@ def cmd_post(text: Optional[str] = None):
             tweet_text, media_ids = result
 
             stdscr.clear()
-            stdscr.addstr(0, 0, "sending...", curses.A_DIM)
+            stdscr.addstr(0, 0, "sending⋯", curses.A_DIM)
             stdscr.refresh()
 
             try:
@@ -893,7 +967,7 @@ def cmd_mentions(show_all: bool, limit: int):
     """CLI command: list mentions (interactive)."""
     def mentions_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
+        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
         stdscr.refresh()
 
         mentions = fetch_mentions(only_unread=(not show_all), max_results=limit)
@@ -914,7 +988,7 @@ def cmd_engagement(limit: int):
     """CLI command: show engagement metrics (interactive)."""
     def engagement_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
+        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
         stdscr.refresh()
 
         tweets = fetch_user_tweets(limit=limit, include_author=True)
@@ -935,7 +1009,7 @@ def cmd_interact(limit: int):
     """CLI command: interactive mention browser."""
     def interact_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
+        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
         stdscr.refresh()
 
         mentions = fetch_mentions(only_unread=False, max_results=limit)
@@ -956,7 +1030,7 @@ def cmd_thread(limit: int):
     """CLI command: interactive thread builder for own tweets."""
     def thread_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
+        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
         stdscr.refresh()
 
         tweets = fetch_user_tweets(limit=limit, include_author=True)
@@ -977,7 +1051,7 @@ def cmd_timeline(limit: int):
     """CLI command: list recent tweets from timeline (interactive)."""
     def timeline_tui(stdscr):
         stdscr.clear()
-        stdscr.addstr(0, 0, "loading...", curses.A_DIM)
+        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
         stdscr.refresh()
 
         tweets = fetch_timeline(limit=limit)
