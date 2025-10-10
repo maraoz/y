@@ -397,7 +397,7 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
         # Header
         stdscr.addstr(0, 0, prompt, curses.A_BOLD)
         stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-        stdscr.addstr(2, 0, "(Ctrl+I for image, Ctrl+J for newline, ENTER to submit, ESC to cancel)")
+        stdscr.addstr(2, 0, "(Ctrl+V for image, Ctrl+J for newline, ENTER to submit, ESC to cancel)")
 
         # Image indicator
         if attached_media_id:
@@ -462,7 +462,7 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                     pass
             media_ids = [attached_media_id] if attached_media_id else None
             return ('\n'.join(lines), media_ids)
-        elif ch == 9:  # Ctrl+I (TAB) - attach image from clipboard
+        elif ch == 22:  # Ctrl+V - attach image from clipboard
             curses.curs_set(0)
             stdscr.clear()
             stdscr.addstr(0, 0, "Grabbing image from clipboard...", curses.A_BOLD)
