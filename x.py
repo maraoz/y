@@ -386,9 +386,9 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
     cursor_col = 0
     start_y = 4
 
-    # Image attachment state
-    attached_image_path = None
-    attached_media_id = None
+    # Image attachment state (supports up to 4 images)
+    attached_image_paths = []
+    attached_media_ids = []
 
     def render_text():
         stdscr.clear()
@@ -401,8 +401,10 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
         stdscr.addstr(3, 0, "")
 
         # Image indicator
-        if attached_media_id:
-            stdscr.addstr(4, 0, "📷 Image attached", curses.A_BOLD | curses.color_pair(0))
+        if attached_media_ids:
+            count = len(attached_media_ids)
+            text = f"📷 {count} image{'s' if count > 1 else ''} attached"
+            stdscr.addstr(4, 0, text, curses.A_BOLD | curses.color_pair(0))
 
         # Calculate start position for text input
         text_start_y = start_y + 2  # Space for instructions and image indicator
@@ -434,22 +436,24 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
 
         if ch == 27:  # ESC
             curses.curs_set(0)
-            # Clean up temp image if any
-            if attached_image_path and os.path.exists(attached_image_path):
-                try:
-                    os.unlink(attached_image_path)
-                except:
-                    pass
+            # Clean up temp images
+            for path in attached_image_paths:
+                if os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except:
+                        pass
             return None
         elif ch == 4:  # Ctrl+D - submit
             curses.curs_set(0)
-            # Clean up temp image if any
-            if attached_image_path and os.path.exists(attached_image_path):
-                try:
-                    os.unlink(attached_image_path)
-                except:
-                    pass
-            media_ids = [attached_media_id] if attached_media_id else None
+            # Clean up temp images
+            for path in attached_image_paths:
+                if os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except:
+                        pass
+            media_ids = attached_media_ids if attached_media_ids else None
             return ('\n'.join(lines), media_ids)
         elif ch == ord('\n') or ch == 10:  # ENTER or Ctrl+J - newline
             current_line = lines[cursor_line]
@@ -460,38 +464,48 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
         elif ch == 22:  # Ctrl+V - attach image from clipboard
             curses.curs_set(0)
             stdscr.clear()
-            stdscr.addstr(0, 0, "Grabbing image from clipboard...", curses.A_BOLD)
-            stdscr.refresh()
 
-            # Grab image from clipboard
-            image_path = grab_clipboard_image()
-            if image_path:
-                stdscr.addstr(1, 0, "Uploading image...")
+            # Check if we've hit the limit
+            if len(attached_media_ids) >= 4:
+                stdscr.addstr(0, 0, "✗ Maximum 4 images allowed", curses.A_BOLD)
+                stdscr.addstr(2, 0, "Press any key to continue...")
+                stdscr.refresh()
+                stdscr.getch()
+                curses.curs_set(1)
+            else:
+                stdscr.addstr(0, 0, "Grabbing image from clipboard...", curses.A_BOLD)
                 stdscr.refresh()
 
-                try:
-                    # Upload to X API
-                    media_id = upload_media(image_path)
-                    if media_id:
-                        attached_media_id = media_id
-                        attached_image_path = image_path
-                        stdscr.addstr(2, 0, "✓ Image attached successfully!", curses.A_BOLD)
-                    else:
-                        stdscr.addstr(2, 0, "✗ Failed to upload image", curses.A_BOLD)
+                # Grab image from clipboard
+                image_path = grab_clipboard_image()
+                if image_path:
+                    stdscr.addstr(1, 0, "Uploading image...")
+                    stdscr.refresh()
+
+                    try:
+                        # Upload to X API
+                        media_id = upload_media(image_path)
+                        if media_id:
+                            attached_media_ids.append(media_id)
+                            attached_image_paths.append(image_path)
+                            count = len(attached_media_ids)
+                            stdscr.addstr(2, 0, f"✓ Image {count} attached successfully!", curses.A_BOLD)
+                        else:
+                            stdscr.addstr(2, 0, "✗ Failed to upload image", curses.A_BOLD)
+                            if os.path.exists(image_path):
+                                os.unlink(image_path)
+                    except Exception as e:
+                        stdscr.addstr(2, 0, f"✗ Error: {str(e)[:width-10]}", curses.A_BOLD)
                         if os.path.exists(image_path):
                             os.unlink(image_path)
-                except Exception as e:
-                    stdscr.addstr(2, 0, f"✗ Error: {str(e)[:width-10]}", curses.A_BOLD)
-                    if os.path.exists(image_path):
-                        os.unlink(image_path)
-            else:
-                stdscr.addstr(1, 0, "✗ No image found in clipboard", curses.A_BOLD)
-                stdscr.addstr(2, 0, "(Make sure 'pngpaste' is installed: brew install pngpaste)")
+                else:
+                    stdscr.addstr(1, 0, "✗ No image found in clipboard", curses.A_BOLD)
+                    stdscr.addstr(2, 0, "(Make sure 'pngpaste' is installed: brew install pngpaste)")
 
-            stdscr.addstr(3, 0, "Press any key to continue...")
-            stdscr.refresh()
-            stdscr.getch()
-            curses.curs_set(1)
+                stdscr.addstr(3, 0, "Press any key to continue...")
+                stdscr.refresh()
+                stdscr.getch()
+                curses.curs_set(1)
         elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
             if cursor_col > 0:
                 current_line = lines[cursor_line]
