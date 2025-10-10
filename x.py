@@ -355,7 +355,7 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
         timestamp = format_timestamp(tweet.get("at", ""))
         text = tweet.get("text", "")
 
-        prefix = "▸ " if i == current_idx else "◦ "
+        prefix = "▸ " if i == current_idx else "  "
         line = f"{prefix}@{username} · {timestamp} · {text}"
 
         if len(line) > width - 1:
@@ -793,7 +793,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
             if start_line + i >= height - 1:
                 break
 
-            prefix = "▸ " if i == current_idx else "◦ "
+            prefix = "▸ " if i == current_idx else "  "
             line = f"{prefix}{desc}"
 
             attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
@@ -932,141 +932,159 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
 # CLI COMMANDS
 # ============================================================================
 
-def cmd_post(text: Optional[str] = None):
+def cmd_post(text: Optional[str] = None, stdscr=None):
     """CLI command: post a tweet."""
     if text is None:
         # Interactive mode - get text via TUI
-        def post_tui(stdscr):
-            result = get_text_input(stdscr, "write")
+        def post_tui(scr):
+            result = get_text_input(scr, "write")
             if result is None:
                 return None
 
             tweet_text, media_ids = result
 
-            stdscr.clear()
-            stdscr.addstr(0, 0, "sending⋯", curses.A_DIM)
-            stdscr.refresh()
+            scr.clear()
+            scr.addstr(0, 0, "sending⋯", curses.A_DIM)
+            scr.refresh()
 
             try:
                 resp = create_tweet(tweet_text, media_ids=media_ids)
                 tweet_id = resp.get('data', {}).get('id', 'unknown')
-                show_success_message(stdscr, "posted", tweet_id)
+                show_success_message(scr, "posted", tweet_id)
                 return resp
             except Exception as e:
-                show_error_message(stdscr, str(e))
+                show_error_message(scr, str(e))
                 return None
 
-        curses.wrapper(post_tui)
+        if stdscr:
+            post_tui(stdscr)
+        else:
+            curses.wrapper(post_tui)
     else:
         # Direct command mode - use provided text
         resp = create_tweet(text)
         data = resp.get("data", {})
         print(json.dumps({"id": data.get("id"), "text": data.get("text")}, ensure_ascii=False))
 
-def cmd_mentions(show_all: bool, limit: int):
+def cmd_mentions(show_all: bool, limit: int, stdscr=None):
     """CLI command: list mentions (interactive)."""
-    def mentions_tui(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
-        stdscr.refresh()
+    def mentions_tui(scr):
+        scr.clear()
+        scr.addstr(0, 0, "loading⋯", curses.A_DIM)
+        scr.refresh()
 
         mentions = fetch_mentions(only_unread=(not show_all), max_results=limit)
 
         if not mentions:
-            stdscr.clear()
-            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
-            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
-            stdscr.refresh()
-            stdscr.getch()
+            scr.clear()
+            scr.addstr(0, 0, "nothing here", curses.A_DIM)
+            scr.addstr(2, 0, "press any key", curses.A_DIM)
+            scr.refresh()
+            scr.getch()
             return
 
-        browse_tweets_controller(stdscr, mentions, "mentions")
+        browse_tweets_controller(scr, mentions, "mentions")
 
-    curses.wrapper(mentions_tui)
+    if stdscr:
+        mentions_tui(stdscr)
+    else:
+        curses.wrapper(mentions_tui)
 
-def cmd_engagement(limit: int):
+def cmd_engagement(limit: int, stdscr=None):
     """CLI command: show engagement metrics (interactive)."""
-    def engagement_tui(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
-        stdscr.refresh()
+    def engagement_tui(scr):
+        scr.clear()
+        scr.addstr(0, 0, "loading⋯", curses.A_DIM)
+        scr.refresh()
 
         tweets = fetch_user_tweets(limit=limit, include_author=True)
 
         if not tweets:
-            stdscr.clear()
-            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
-            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
-            stdscr.refresh()
-            stdscr.getch()
+            scr.clear()
+            scr.addstr(0, 0, "nothing here", curses.A_DIM)
+            scr.addstr(2, 0, "press any key", curses.A_DIM)
+            scr.refresh()
+            scr.getch()
             return
 
-        browse_tweets_controller(stdscr, tweets, "ego")
+        browse_tweets_controller(scr, tweets, "ego")
 
-    curses.wrapper(engagement_tui)
+    if stdscr:
+        engagement_tui(stdscr)
+    else:
+        curses.wrapper(engagement_tui)
 
-def cmd_interact(limit: int):
+def cmd_interact(limit: int, stdscr=None):
     """CLI command: interactive mention browser."""
-    def interact_tui(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
-        stdscr.refresh()
+    def interact_tui(scr):
+        scr.clear()
+        scr.addstr(0, 0, "loading⋯", curses.A_DIM)
+        scr.refresh()
 
         mentions = fetch_mentions(only_unread=False, max_results=limit)
 
         if not mentions:
-            stdscr.clear()
-            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
-            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
-            stdscr.refresh()
-            stdscr.getch()
+            scr.clear()
+            scr.addstr(0, 0, "nothing here", curses.A_DIM)
+            scr.addstr(2, 0, "press any key", curses.A_DIM)
+            scr.refresh()
+            scr.getch()
             return
 
-        interactive_tweet_controller(stdscr, mentions, "mentions", "reply")
+        interactive_tweet_controller(scr, mentions, "mentions", "reply")
 
-    curses.wrapper(interact_tui)
+    if stdscr:
+        interact_tui(stdscr)
+    else:
+        curses.wrapper(interact_tui)
 
-def cmd_thread(limit: int):
+def cmd_thread(limit: int, stdscr=None):
     """CLI command: interactive thread builder for own tweets."""
-    def thread_tui(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
-        stdscr.refresh()
+    def thread_tui(scr):
+        scr.clear()
+        scr.addstr(0, 0, "loading⋯", curses.A_DIM)
+        scr.refresh()
 
         tweets = fetch_user_tweets(limit=limit, include_author=True)
 
         if not tweets:
-            stdscr.clear()
-            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
-            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
-            stdscr.refresh()
-            stdscr.getch()
+            scr.clear()
+            scr.addstr(0, 0, "nothing here", curses.A_DIM)
+            scr.addstr(2, 0, "press any key", curses.A_DIM)
+            scr.refresh()
+            scr.getch()
             return
 
-        interactive_tweet_controller(stdscr, tweets, "thread", "continue")
+        interactive_tweet_controller(scr, tweets, "thread", "continue")
 
-    curses.wrapper(thread_tui)
+    if stdscr:
+        thread_tui(stdscr)
+    else:
+        curses.wrapper(thread_tui)
 
-def cmd_timeline(limit: int):
+def cmd_timeline(limit: int, stdscr=None):
     """CLI command: list recent tweets from timeline (interactive)."""
-    def timeline_tui(stdscr):
-        stdscr.clear()
-        stdscr.addstr(0, 0, "loading⋯", curses.A_DIM)
-        stdscr.refresh()
+    def timeline_tui(scr):
+        scr.clear()
+        scr.addstr(0, 0, "loading⋯", curses.A_DIM)
+        scr.refresh()
 
         tweets = fetch_timeline(limit=limit)
 
         if not tweets:
-            stdscr.clear()
-            stdscr.addstr(0, 0, "nothing here", curses.A_DIM)
-            stdscr.addstr(2, 0, "press any key", curses.A_DIM)
-            stdscr.refresh()
-            stdscr.getch()
+            scr.clear()
+            scr.addstr(0, 0, "nothing here", curses.A_DIM)
+            scr.addstr(2, 0, "press any key", curses.A_DIM)
+            scr.refresh()
+            scr.getch()
             return
 
-        browse_tweets_controller(stdscr, tweets, "read")
+        browse_tweets_controller(scr, tweets, "read")
 
-    curses.wrapper(timeline_tui)
+    if stdscr:
+        timeline_tui(stdscr)
+    else:
+        curses.wrapper(timeline_tui)
 
 # ============================================================================
 # MAIN
@@ -1100,23 +1118,26 @@ def main(argv=None):
     try:
         # If no command specified, show main menu
         if args.cmd is None:
-            while True:
-                selected = curses.wrapper(main_menu_controller)
-                if selected is None:
-                    return
+            def menu_loop(stdscr):
+                while True:
+                    selected = main_menu_controller(stdscr)
+                    if selected is None:
+                        return
 
-                # Execute selected command
-                if selected == "post":
-                    cmd_post()
-                elif selected == "engagement":
-                    cmd_engagement(limit=5)
-                elif selected == "interact":
-                    cmd_interact(limit=5)
-                elif selected == "thread":
-                    cmd_thread(limit=5)
-                elif selected == "timeline":
-                    cmd_timeline(limit=5)
-                # Loop back to main menu
+                    # Execute selected command (pass stdscr to stay in curses mode)
+                    if selected == "post":
+                        cmd_post(stdscr=stdscr)
+                    elif selected == "engagement":
+                        cmd_engagement(limit=5, stdscr=stdscr)
+                    elif selected == "interact":
+                        cmd_interact(limit=5, stdscr=stdscr)
+                    elif selected == "thread":
+                        cmd_thread(limit=5, stdscr=stdscr)
+                    elif selected == "timeline":
+                        cmd_timeline(limit=5, stdscr=stdscr)
+                    # Loop back to main menu
+
+            curses.wrapper(menu_loop)
         else:
             # Direct command execution
             if args.cmd == "post":
