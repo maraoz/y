@@ -320,7 +320,7 @@ def image_to_ascii(image_path: str, width: int = 40) -> List[str]:
         ascii_art = []
         for i in range(0, len(pixels), width):
             row = pixels[i:i+width]
-            ascii_line = ''.join([ascii_chars[min(pixel * len(ascii_chars) // 256, len(ascii_chars)-1)] for pixel in row])
+            ascii_line = ''.join([ascii_chars[min(int(pixel * len(ascii_chars) / 256), len(ascii_chars)-1)] for pixel in row])
             ascii_art.append(ascii_line)
 
         return ascii_art
