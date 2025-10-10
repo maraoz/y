@@ -686,6 +686,95 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                 except Exception as e:
                     show_error_message(stdscr, str(e))
 
+def engagement_controller(stdscr, tweets: List[Dict[str, Any]]):
+    """Show engagement metrics in a scrollable list with full tweet details."""
+    curses.curs_set(0)
+    current_idx = 0
+    scroll_offset = 0
+
+    while True:
+        stdscr.clear()
+        height, width = stdscr.getmaxyx()
+
+        # Header
+        stdscr.addstr(0, 0, "Engagement Metrics (↑/↓ to navigate, q to quit)", curses.A_BOLD)
+        stdscr.addstr(1, 0, "─" * min(width - 1, 80))
+
+        # Calculate how many lines each tweet needs
+        y_pos = 2
+        visible_tweets = []
+
+        for i, tweet in enumerate(tweets):
+            if y_pos >= height - 1:
+                break
+
+            text = tweet.get("text", "")
+            timestamp = format_timestamp(tweet.get("at", ""))
+            metrics = tweet.get("metrics", {})
+            likes = metrics.get("like_count", 0)
+            retweets = metrics.get("retweet_count", 0)
+            replies = metrics.get("reply_count", 0)
+
+            # Check if this is the selected tweet
+            is_selected = (i == current_idx)
+
+            # Word-wrap the tweet text
+            words = text.split()
+            wrapped_lines = []
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 <= width - 3:
+                    current_line += word + " "
+                else:
+                    if current_line:
+                        wrapped_lines.append(current_line.strip())
+                    current_line = word + " "
+            if current_line:
+                wrapped_lines.append(current_line.strip())
+
+            # Render this tweet
+            try:
+                # Tweet number and timestamp
+                prefix = "> " if is_selected else "  "
+                header_line = f"{prefix}[{timestamp}]"
+                attr = curses.A_REVERSE if is_selected else curses.A_BOLD
+                stdscr.addstr(y_pos, 0, header_line[:width-1], attr)
+                y_pos += 1
+
+                # Tweet text (word-wrapped)
+                attr = curses.A_REVERSE if is_selected else curses.A_NORMAL
+                for line in wrapped_lines:
+                    if y_pos >= height - 1:
+                        break
+                    display_line = ("  " if not is_selected else "> ") + line
+                    stdscr.addstr(y_pos, 0, display_line[:width-1], attr)
+                    y_pos += 1
+
+                # Metrics line
+                if y_pos < height - 1:
+                    metrics_line = f"  ❤️  {likes}  🔁 {retweets}  💬 {replies}"
+                    stdscr.addstr(y_pos, 0, metrics_line[:width-1], attr)
+                    y_pos += 1
+
+                # Blank line separator
+                if y_pos < height - 1 and i < len(tweets) - 1:
+                    y_pos += 1
+
+            except curses.error:
+                pass
+
+        stdscr.refresh()
+
+        # Handle input
+        key = stdscr.getch()
+
+        if key == curses.KEY_UP and current_idx > 0:
+            current_idx -= 1
+        elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
+            current_idx += 1
+        elif key == ord('q') or key == ord('Q'):
+            break
+
 # ============================================================================
 # CLI COMMANDS
 # ============================================================================
@@ -757,7 +846,7 @@ def cmd_engagement(limit: int):
             stdscr.getch()
             return
 
-        browse_tweets_controller(stdscr, tweets, "Your Tweets - Engagement")
+        engagement_controller(stdscr, tweets)
 
     curses.wrapper(engagement_tui)
 
