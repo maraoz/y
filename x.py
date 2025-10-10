@@ -49,7 +49,35 @@ def api_request(method: str, path: str, params: Optional[Dict[str, Any]] = None,
             body = r.json()
         except Exception:
             body = {"raw": r.text}
-        error_msg = f"HTTP {r.status_code}: {json.dumps(body, ensure_ascii=False)}"
+
+        # Build detailed error message with request context
+        error_lines = [f"API Error: {method} {path}"]
+
+        # Add parameters if present
+        if params:
+            error_lines.append(f"Params: {json.dumps(params, ensure_ascii=False)}")
+        if payload:
+            error_lines.append(f"Payload: {json.dumps(payload, ensure_ascii=False)}")
+
+        # Add response details
+        error_lines.append(f"Status: {r.status_code}")
+
+        # Parse error body for common fields
+        if isinstance(body, dict):
+            if "title" in body:
+                error_lines.append(f"Error: {body['title']}")
+            if "detail" in body:
+                error_lines.append(f"Detail: {body['detail']}")
+            if "type" in body:
+                error_lines.append(f"Type: {body['type']}")
+            # If there are other fields, show them too
+            other_fields = {k: v for k, v in body.items() if k not in ["title", "detail", "type"]}
+            if other_fields:
+                error_lines.append(f"Additional info: {json.dumps(other_fields, ensure_ascii=False)}")
+        else:
+            error_lines.append(f"Response: {json.dumps(body, ensure_ascii=False)}")
+
+        error_msg = "\n".join(error_lines)
         raise Exception(error_msg)
 
     return r.json()
