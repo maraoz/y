@@ -342,7 +342,7 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
     # Header
     hint = "enter view" if show_detail_hint else "enter reply"
     stdscr.addstr(0, 0, f"{header}", curses.A_BOLD)
-    stdscr.addstr(1, 0, f"↑↓ navigate · {hint} · q quit", curses.A_DIM)
+    stdscr.addstr(1, 0, f"↑↓ navigate · {hint} · q back", curses.A_DIM)
 
     # Tweet list
     start_line = 2
@@ -869,7 +869,7 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
             replies = metrics.get("reply_count", 0)
             stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
 
-            stdscr.addstr(height - 2, 0, "esc back · ↑↓ navigate · q quit", curses.A_DIM)
+            stdscr.addstr(height - 2, 0, "esc back · ↑↓ navigate · q back", curses.A_DIM)
             stdscr.refresh()
 
             key = stdscr.getch()
@@ -1100,21 +1100,23 @@ def main(argv=None):
     try:
         # If no command specified, show main menu
         if args.cmd is None:
-            selected = curses.wrapper(main_menu_controller)
-            if selected is None:
-                return
+            while True:
+                selected = curses.wrapper(main_menu_controller)
+                if selected is None:
+                    return
 
-            # Execute selected command
-            if selected == "post":
-                cmd_post()
-            elif selected == "engagement":
-                cmd_engagement(limit=5)
-            elif selected == "interact":
-                cmd_interact(limit=5)
-            elif selected == "thread":
-                cmd_thread(limit=5)
-            elif selected == "timeline":
-                cmd_timeline(limit=5)
+                # Execute selected command
+                if selected == "post":
+                    cmd_post()
+                elif selected == "engagement":
+                    cmd_engagement(limit=5)
+                elif selected == "interact":
+                    cmd_interact(limit=5)
+                elif selected == "thread":
+                    cmd_thread(limit=5)
+                elif selected == "timeline":
+                    cmd_timeline(limit=5)
+                # Loop back to main menu
         else:
             # Direct command execution
             if args.cmd == "post":
