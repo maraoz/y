@@ -810,19 +810,19 @@ def main(argv=None):
 
     p_mentions = sub.add_parser("mentions", help="List mentions (@you), optionally unread since last run")
     p_mentions.add_argument("--all", action="store_true", help="Show recent mentions regardless of unread state")
-    p_mentions.add_argument("--limit", type=int, default=20, help="Max results (5-100)")
+    p_mentions.add_argument("--limit", type=int, default=5, help="Max results (5-100)")
 
     p_eng = sub.add_parser("engagement", help="Show engagement metrics for your recent tweets")
-    p_eng.add_argument("--limit", type=int, default=10, help="How many recent tweets to fetch (5-100)")
+    p_eng.add_argument("--limit", type=int, default=5, help="How many recent tweets to fetch (5-100)")
 
     p_interact = sub.add_parser("interact", help="Browse and reply to mentions")
     p_interact.add_argument("--limit", type=int, default=5, help="How many recent mentions to fetch (5-100)")
 
     p_thread = sub.add_parser("thread", help="Build threads from your own tweets")
-    p_thread.add_argument("--limit", type=int, default=10, help="How many recent tweets to fetch (5-100)")
+    p_thread.add_argument("--limit", type=int, default=5, help="How many recent tweets to fetch (5-100)")
 
     p_timeline = sub.add_parser("timeline", help="List recent tweets from your timeline")
-    p_timeline.add_argument("--limit", type=int, default=10, help="How many recent tweets to fetch (5-100)")
+    p_timeline.add_argument("--limit", type=int, default=5, help="How many recent tweets to fetch (5-100)")
 
     args = parser.parse_args(argv)
 
@@ -837,15 +837,15 @@ def main(argv=None):
             if selected == "post":
                 cmd_post()
             elif selected == "mentions":
-                cmd_mentions(show_all=False, limit=20)
+                cmd_mentions(show_all=False, limit=5)
             elif selected == "engagement":
-                cmd_engagement(limit=10)
+                cmd_engagement(limit=5)
             elif selected == "interact":
                 cmd_interact(limit=5)
             elif selected == "thread":
-                cmd_thread(limit=10)
+                cmd_thread(limit=5)
             elif selected == "timeline":
-                cmd_timeline(limit=10)
+                cmd_timeline(limit=5)
         else:
             # Direct command execution
             if args.cmd == "post":
