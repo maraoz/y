@@ -255,8 +255,8 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
     stdscr.refresh()
 
 def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[str]:
-    """Get single-line text input from user in TUI."""
-    curses.echo()
+    """Get multiline text input from user in TUI."""
+    curses.noecho()
     curses.curs_set(1)
 
     stdscr.clear()
@@ -264,54 +264,93 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[str]:
 
     stdscr.addstr(0, 0, prompt, curses.A_BOLD)
     stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-    stdscr.addstr(2, 0, "(ENTER to submit, ESC to cancel)")
-    stdscr.addstr(4, 0, "> ")
-
+    stdscr.addstr(2, 0, "(Ctrl+J for newline, ENTER to submit, ESC to cancel)")
     stdscr.refresh()
 
-    # Get input
-    text_input = ""
-    cursor_pos = 0
-    input_y = 4
-    input_x = 2  # After "> "
+    # Input area starts at line 4
+    lines = [""]
+    cursor_line = 0
+    cursor_col = 0
+    start_y = 4
 
-    while True:
-        try:
-            stdscr.move(input_y, input_x + cursor_pos)
+    def render_text():
+        # Clear input area
+        for i in range(start_y, height - 1):
+            stdscr.move(i, 0)
             stdscr.clrtoeol()
-            stdscr.addstr(input_y, input_x, text_input)
-            stdscr.move(input_y, input_x + cursor_pos)
+
+        # Render lines
+        for i, line in enumerate(lines):
+            if start_y + i >= height - 1:
+                break
+            try:
+                stdscr.addstr(start_y + i, 0, line[:width-1])
+            except curses.error:
+                pass
+
+        # Position cursor
+        try:
+            stdscr.move(start_y + cursor_line, cursor_col)
         except curses.error:
             pass
-
         stdscr.refresh()
+
+    while True:
+        render_text()
         ch = stdscr.getch()
 
         if ch == 27:  # ESC
-            curses.noecho()
             curses.curs_set(0)
             return None
-        elif ch == ord('\n'):  # ENTER
-            curses.noecho()
+        elif ch == ord('\n'):  # ENTER - submit
             curses.curs_set(0)
-            return text_input.strip()
+            return '\n'.join(lines)
+        elif ch == 10:  # Ctrl+J - newline
+            current_line = lines[cursor_line]
+            lines[cursor_line] = current_line[:cursor_col]
+            lines.insert(cursor_line + 1, current_line[cursor_col:])
+            cursor_line += 1
+            cursor_col = 0
         elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
-            if cursor_pos > 0:
-                text_input = text_input[:cursor_pos-1] + text_input[cursor_pos:]
-                cursor_pos -= 1
+            if cursor_col > 0:
+                current_line = lines[cursor_line]
+                lines[cursor_line] = current_line[:cursor_col-1] + current_line[cursor_col:]
+                cursor_col -= 1
+            elif cursor_line > 0:
+                # Join with previous line
+                prev_line = lines[cursor_line - 1]
+                cursor_col = len(prev_line)
+                lines[cursor_line - 1] = prev_line + lines[cursor_line]
+                lines.pop(cursor_line)
+                cursor_line -= 1
+        elif ch == curses.KEY_UP:
+            if cursor_line > 0:
+                cursor_line -= 1
+                cursor_col = min(cursor_col, len(lines[cursor_line]))
+        elif ch == curses.KEY_DOWN:
+            if cursor_line < len(lines) - 1:
+                cursor_line += 1
+                cursor_col = min(cursor_col, len(lines[cursor_line]))
         elif ch == curses.KEY_LEFT:
-            if cursor_pos > 0:
-                cursor_pos -= 1
+            if cursor_col > 0:
+                cursor_col -= 1
+            elif cursor_line > 0:
+                cursor_line -= 1
+                cursor_col = len(lines[cursor_line])
         elif ch == curses.KEY_RIGHT:
-            if cursor_pos < len(text_input):
-                cursor_pos += 1
+            if cursor_col < len(lines[cursor_line]):
+                cursor_col += 1
+            elif cursor_line < len(lines) - 1:
+                cursor_line += 1
+                cursor_col = 0
         elif 32 <= ch <= 126:  # Printable characters
-            text_input = text_input[:cursor_pos] + chr(ch) + text_input[cursor_pos:]
-            cursor_pos += 1
+            current_line = lines[cursor_line]
+            lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
+            cursor_col += 1
 
 def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying to") -> Optional[str]:
-    """Show reply composition screen and get user input."""
-    curses.echo()
+    """Show reply composition screen and get multiline user input."""
+    curses.noecho()
     curses.curs_set(1)
 
     stdscr.clear()
@@ -335,59 +374,102 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying
         if len(current_line) + len(word) + 1 <= width - 1:
             current_line += word + " "
         else:
-            if y_offset < height - 5:
+            if y_offset < height - 8:
                 stdscr.addstr(y_offset, 0, current_line.strip())
                 y_offset += 1
             current_line = word + " "
-    if current_line and y_offset < height - 5:
+    if current_line and y_offset < height - 8:
         stdscr.addstr(y_offset, 0, current_line.strip())
         y_offset += 1
 
     y_offset += 1
     stdscr.addstr(y_offset, 0, "─" * min(width - 1, 80))
     y_offset += 1
-    stdscr.addstr(y_offset, 0, "Your reply (ENTER to send, ESC to cancel):")
+    stdscr.addstr(y_offset, 0, "Your reply (Ctrl+J for newline, ENTER to send, ESC to cancel):")
     y_offset += 1
 
+    start_y = y_offset
     stdscr.refresh()
 
-    # Get input
-    reply_input = ""
-    cursor_pos = 0
+    # Input handling with multiline support
+    lines = [""]
+    cursor_line = 0
+    cursor_col = 0
 
-    while True:
-        try:
-            stdscr.move(y_offset, cursor_pos)
+    def render_input():
+        # Clear input area
+        for i in range(start_y, height - 1):
+            stdscr.move(i, 0)
             stdscr.clrtoeol()
-            stdscr.addstr(y_offset, 0, reply_input)
-            stdscr.move(y_offset, cursor_pos)
+
+        # Render lines
+        for i, line in enumerate(lines):
+            if start_y + i >= height - 1:
+                break
+            try:
+                stdscr.addstr(start_y + i, 0, line[:width-1])
+            except curses.error:
+                pass
+
+        # Position cursor
+        try:
+            stdscr.move(start_y + cursor_line, cursor_col)
         except curses.error:
             pass
-
         stdscr.refresh()
+
+    while True:
+        render_input()
         ch = stdscr.getch()
 
         if ch == 27:  # ESC
-            curses.noecho()
             curses.curs_set(0)
             return None
-        elif ch == ord('\n'):  # ENTER
-            curses.noecho()
+        elif ch == ord('\n'):  # ENTER - submit
             curses.curs_set(0)
-            return reply_input.strip()
+            return '\n'.join(lines)
+        elif ch == 10:  # Ctrl+J - newline
+            current_line = lines[cursor_line]
+            lines[cursor_line] = current_line[:cursor_col]
+            lines.insert(cursor_line + 1, current_line[cursor_col:])
+            cursor_line += 1
+            cursor_col = 0
         elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
-            if cursor_pos > 0:
-                reply_input = reply_input[:cursor_pos-1] + reply_input[cursor_pos:]
-                cursor_pos -= 1
+            if cursor_col > 0:
+                current_line = lines[cursor_line]
+                lines[cursor_line] = current_line[:cursor_col-1] + current_line[cursor_col:]
+                cursor_col -= 1
+            elif cursor_line > 0:
+                # Join with previous line
+                prev_line = lines[cursor_line - 1]
+                cursor_col = len(prev_line)
+                lines[cursor_line - 1] = prev_line + lines[cursor_line]
+                lines.pop(cursor_line)
+                cursor_line -= 1
+        elif ch == curses.KEY_UP:
+            if cursor_line > 0:
+                cursor_line -= 1
+                cursor_col = min(cursor_col, len(lines[cursor_line]))
+        elif ch == curses.KEY_DOWN:
+            if cursor_line < len(lines) - 1:
+                cursor_line += 1
+                cursor_col = min(cursor_col, len(lines[cursor_line]))
         elif ch == curses.KEY_LEFT:
-            if cursor_pos > 0:
-                cursor_pos -= 1
+            if cursor_col > 0:
+                cursor_col -= 1
+            elif cursor_line > 0:
+                cursor_line -= 1
+                cursor_col = len(lines[cursor_line])
         elif ch == curses.KEY_RIGHT:
-            if cursor_pos < len(reply_input):
-                cursor_pos += 1
+            if cursor_col < len(lines[cursor_line]):
+                cursor_col += 1
+            elif cursor_line < len(lines) - 1:
+                cursor_line += 1
+                cursor_col = 0
         elif 32 <= ch <= 126:  # Printable characters
-            reply_input = reply_input[:cursor_pos] + chr(ch) + reply_input[cursor_pos:]
-            cursor_pos += 1
+            current_line = lines[cursor_line]
+            lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
+            cursor_col += 1
 
 def show_success_message(stdscr, message: str, tweet_id: str):
     """Display success message after sending a reply."""
