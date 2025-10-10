@@ -23,27 +23,36 @@ Get credentials from the [X Developer Portal](https://developer.x.com/).
 
 ## Usage
 
+**Interactive menu (recommended):**
 ```bash
-# Post a tweet
-./x.py post "Hello world"
+./x.py
+```
+Navigate with arrow keys, press Enter to select.
 
-# List mentions
-./x.py mentions
-
-# Interactive UI to browse and reply to mentions
-./x.py interact
-
-# Interactive UI to build threads from your tweets
-./x.py thread
-
-# View engagement metrics
-./x.py engagements
+**Direct commands:**
+```bash
+./x.py post                         # Post a tweet (prompts for text in TUI)
+./x.py post "Hello world"           # Post a tweet directly
+./x.py mentions                     # List mentions
+./x.py interact                     # Reply to mentions (interactive)
+./x.py thread                       # Build threads (interactive)
+./x.py timeline                     # View timeline
+./x.py engagement                   # View engagement metrics
 ```
 
 ## How it works
 
-- **mentions**: Tracks unread mentions using a local state file
-- **interact**: Curses-based TUI with arrow key navigation to reply to mentions
-- **thread**: Curses-based TUI to reply to your own tweets (build threads)
-- **engagements**: Shows public metrics for your recent tweets
-- **post**: Publishes tweets with optional reply threading
+All commands use interactive TUI with arrow key navigation:
+
+- **mentions**: Browse mentions, press ENTER for details (tracks unread)
+- **interact**: Browse mentions and reply to them
+- **thread**: Browse your tweets and build threads
+- **timeline**: Browse tweets from people you follow
+- **engagement**: Browse your tweets with engagement metrics
+- **post**: Publish tweets (with optional reply threading)
+
+**Navigation:**
+- `↑/↓` - Navigate list
+- `ENTER` - View details (mentions/timeline/engagement) or compose reply (interact/thread)
+- `ESC` - Back to list (from detail view)
+- `q` - Quit

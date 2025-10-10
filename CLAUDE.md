@@ -20,13 +20,26 @@ X_ACCESS_TOKEN_SECRET = "..."
 
 ## Commands
 
+**Interactive menu:**
 ```bash
-./x.py post "text"                   # Post tweet
-./x.py mentions [--all] [--limit N]  # List mentions
-./x.py engagements [--limit N]       # View metrics
-./x.py interact [--limit N]          # Interactive TUI to reply to mentions
-./x.py thread [--limit N]            # Interactive TUI to build threads
+./x.py                               # Main menu with arrow key navigation
 ```
+
+**Direct commands (all interactive TUI):**
+```bash
+./x.py post [text]                   # Post tweet (prompts in TUI if text not provided)
+./x.py mentions [--all] [--limit N]  # Browse mentions (read-only with detail view)
+./x.py interact [--limit N]          # Browse mentions and reply
+./x.py thread [--limit N]            # Browse your tweets and build threads
+./x.py timeline [--limit N]          # Browse timeline (read-only with detail view)
+./x.py engagement [--limit N]        # Browse your tweets with metrics (read-only)
+```
+
+**TUI Features:**
+- List view with arrow key navigation
+- Press ENTER for detail view (shows full tweet + metrics)
+- ESC to go back from detail view
+- Can navigate between tweets while in detail view
 
 ## Code Structure
 
