@@ -6,9 +6,11 @@ import json
 import argparse
 import requests
 import curses
+import subprocess
+import tempfile
 from datetime import datetime
 from requests_oauthlib import OAuth1
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 from config import X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET
 
@@ -112,11 +114,13 @@ def get_authenticated_user() -> Dict[str, Any]:
     """Get the authenticated user's information."""
     return api_request("GET", "/2/users/me", params={"user.fields": "username"})
 
-def create_tweet(text: str, reply_to_id: Optional[str] = None) -> Dict[str, Any]:
-    """Post a tweet, optionally as a reply."""
+def create_tweet(text: str, reply_to_id: Optional[str] = None, media_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Post a tweet, optionally as a reply and/or with media attachments."""
     payload = {"text": text}
     if reply_to_id:
         payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
+    if media_ids:
+        payload["media"] = {"media_ids": media_ids}
     return api_request("POST", "/2/tweets", payload=payload)
 
 def fetch_mentions(only_unread: bool = False, max_results: int = 20) -> List[Dict[str, Any]]:
@@ -243,6 +247,89 @@ def format_timestamp(iso_str: str) -> str:
     except Exception:
         return iso_str
 
+def grab_clipboard_image() -> Optional[str]:
+    """
+    Grab image from clipboard and save to temp file.
+    Returns temp file path or None if failed.
+    Currently supports macOS via pngpaste.
+    """
+    try:
+        # Check if pngpaste is available (macOS)
+        result = subprocess.run(['which', 'pngpaste'], capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+
+        # Create temp file
+        temp_fd, temp_path = tempfile.mkstemp(suffix='.png')
+        os.close(temp_fd)
+
+        # Run pngpaste to save clipboard to temp file
+        result = subprocess.run(['pngpaste', temp_path], capture_output=True)
+        if result.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            return temp_path
+        else:
+            # Clean up if failed
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+            return None
+    except Exception:
+        return None
+
+def upload_media(image_path: str) -> Optional[str]:
+    """
+    Upload media to X API and return media_id.
+    Uses the v1.1 media/upload endpoint.
+    """
+    try:
+        url = "https://upload.twitter.com/1.1/media/upload.json"
+
+        with open(image_path, 'rb') as f:
+            files = {'media': f}
+            r = requests.post(url, auth=client(), files=files, timeout=60)
+
+        if r.status_code >= 400:
+            raise Exception(f"Media upload failed: HTTP {r.status_code}")
+
+        data = r.json()
+        return data.get('media_id_string')
+    except Exception as e:
+        raise Exception(f"Media upload error: {e}")
+
+def image_to_ascii(image_path: str, width: int = 40) -> List[str]:
+    """
+    Convert image to ASCII art.
+    Returns list of ASCII art lines.
+    """
+    try:
+        from PIL import Image
+
+        # ASCII characters from dark to light
+        ascii_chars = " .:-=+*#%@"
+
+        # Open and resize image
+        img = Image.open(image_path)
+        aspect_ratio = img.height / img.width
+        height = int(width * aspect_ratio * 0.5)  # 0.5 to account for character aspect ratio
+        img = img.resize((width, height))
+
+        # Convert to grayscale
+        img = img.convert('L')
+
+        # Convert to ASCII
+        pixels = img.getdata()
+        ascii_art = []
+        for i in range(0, len(pixels), width):
+            row = pixels[i:i+width]
+            ascii_line = ''.join([ascii_chars[min(pixel * len(ascii_chars) // 256, len(ascii_chars)-1)] for pixel in row])
+            ascii_art.append(ascii_line)
+
+        return ascii_art
+    except ImportError:
+        # PIL not available
+        return ["[Image preview unavailable - install Pillow: pip install Pillow]"]
+    except Exception as e:
+        return [f"[Image preview error: {e}]"]
+
 # ============================================================================
 # TUI COMPONENTS
 # ============================================================================
@@ -282,18 +369,16 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
 
     stdscr.refresh()
 
-def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[str]:
-    """Get multiline text input from user in TUI."""
+def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, Optional[List[str]]]]:
+    """
+    Get multiline text input from user in TUI with optional image attachment.
+    Returns tuple of (text, media_ids) or None if cancelled.
+    """
     curses.noecho()
     curses.curs_set(1)
 
     stdscr.clear()
     height, width = stdscr.getmaxyx()
-
-    stdscr.addstr(0, 0, prompt, curses.A_BOLD)
-    stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-    stdscr.addstr(2, 0, "(Ctrl+J for newline, ENTER to submit, ESC to cancel)")
-    stdscr.refresh()
 
     # Input area starts at line 4
     lines = [""]
@@ -301,24 +386,55 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[str]:
     cursor_col = 0
     start_y = 4
 
+    # Image attachment state
+    attached_image_path = None
+    attached_media_id = None
+    ascii_preview = []
+
     def render_text():
-        # Clear input area
-        for i in range(start_y, height - 1):
+        stdscr.clear()
+
+        # Header
+        stdscr.addstr(0, 0, prompt, curses.A_BOLD)
+        stdscr.addstr(1, 0, "─" * min(width - 1, 80))
+        stdscr.addstr(2, 0, "(Ctrl+I for image, Ctrl+J for newline, ENTER to submit, ESC to cancel)")
+
+        # Image indicator
+        if attached_media_id:
+            stdscr.addstr(3, 0, "📷 Image attached", curses.A_BOLD | curses.color_pair(0))
+
+        # Calculate start position for text input
+        text_start_y = start_y
+
+        # Show ASCII preview if image attached
+        if ascii_preview:
+            preview_y = text_start_y
+            for i, line in enumerate(ascii_preview[:min(10, len(ascii_preview))]):  # Show max 10 lines
+                if preview_y + i >= height - 5:
+                    break
+                try:
+                    stdscr.addstr(preview_y + i, 0, line[:width-1], curses.A_DIM)
+                except curses.error:
+                    pass
+            text_start_y = preview_y + min(10, len(ascii_preview)) + 1
+
+        # Clear text input area
+        for i in range(text_start_y, height - 1):
             stdscr.move(i, 0)
             stdscr.clrtoeol()
 
-        # Render lines
+        # Render text lines
         for i, line in enumerate(lines):
-            if start_y + i >= height - 1:
+            if text_start_y + i >= height - 1:
                 break
             try:
-                stdscr.addstr(start_y + i, 0, line[:width-1])
+                stdscr.addstr(text_start_y + i, 0, line[:width-1])
             except curses.error:
                 pass
 
         # Position cursor
         try:
-            stdscr.move(start_y + cursor_line, cursor_col)
+            stdscr.move(text_start_y + cursor_line, cursor_col)
         except curses.error:
             pass
         stdscr.refresh()
@@ -329,10 +445,60 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[str]:
 
         if ch == 27:  # ESC
             curses.curs_set(0)
+            # Clean up temp image if any
+            if attached_image_path and os.path.exists(attached_image_path):
+                try:
+                    os.unlink(attached_image_path)
+                except:
+                    pass
             return None
         elif ch == ord('\n'):  # ENTER - submit
             curses.curs_set(0)
-            return '\n'.join(lines)
+            # Clean up temp image if any
+            if attached_image_path and os.path.exists(attached_image_path):
+                try:
+                    os.unlink(attached_image_path)
+                except:
+                    pass
+            media_ids = [attached_media_id] if attached_media_id else None
+            return ('\n'.join(lines), media_ids)
+        elif ch == 9:  # Ctrl+I (TAB) - attach image from clipboard
+            curses.curs_set(0)
+            stdscr.clear()
+            stdscr.addstr(0, 0, "Grabbing image from clipboard...", curses.A_BOLD)
+            stdscr.refresh()
+
+            # Grab image from clipboard
+            image_path = grab_clipboard_image()
+            if image_path:
+                stdscr.addstr(1, 0, "Uploading image...")
+                stdscr.refresh()
+
+                try:
+                    # Upload to X API
+                    media_id = upload_media(image_path)
+                    if media_id:
+                        attached_media_id = media_id
+                        attached_image_path = image_path
+                        # Generate ASCII preview
+                        ascii_preview = image_to_ascii(image_path, width=min(width-2, 60))
+                        stdscr.addstr(2, 0, "✓ Image attached successfully!", curses.A_BOLD)
+                    else:
+                        stdscr.addstr(2, 0, "✗ Failed to upload image", curses.A_BOLD)
+                        if os.path.exists(image_path):
+                            os.unlink(image_path)
+                except Exception as e:
+                    stdscr.addstr(2, 0, f"✗ Error: {str(e)[:width-10]}", curses.A_BOLD)
+                    if os.path.exists(image_path):
+                        os.unlink(image_path)
+            else:
+                stdscr.addstr(1, 0, "✗ No image found in clipboard", curses.A_BOLD)
+                stdscr.addstr(2, 0, "(Make sure 'pngpaste' is installed: brew install pngpaste)")
+
+            stdscr.addstr(3, 0, "Press any key to continue...")
+            stdscr.refresh()
+            stdscr.getch()
+            curses.curs_set(1)
         elif ch == 10:  # Ctrl+J - newline
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col]
@@ -784,16 +950,18 @@ def cmd_post(text: Optional[str] = None):
     if text is None:
         # Interactive mode - get text via TUI
         def post_tui(stdscr):
-            tweet_text = get_text_input(stdscr, "Post a tweet")
-            if tweet_text is None:
+            result = get_text_input(stdscr, "Post a tweet")
+            if result is None:
                 return None
+
+            tweet_text, media_ids = result
 
             stdscr.clear()
             stdscr.addstr(0, 0, "Posting tweet...")
             stdscr.refresh()
 
             try:
-                resp = create_tweet(tweet_text)
+                resp = create_tweet(tweet_text, media_ids=media_ids)
                 tweet_id = resp.get('data', {}).get('id', 'unknown')
                 show_success_message(stdscr, "Tweet posted successfully!", tweet_id)
                 return resp
