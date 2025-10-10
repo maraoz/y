@@ -397,14 +397,16 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
         # Header
         stdscr.addstr(0, 0, prompt, curses.A_BOLD)
         stdscr.addstr(1, 0, "─" * min(width - 1, 80))
-        stdscr.addstr(2, 0, "(Ctrl+V for image, Ctrl+J for newline, ENTER to submit, ESC to cancel)")
+        stdscr.addstr(2, 0, "(Ctrl+V for image, ENTER for newline, Ctrl+D to submit, ESC to cancel)")
+        # Blank line for spacing
+        stdscr.addstr(3, 0, "")
 
         # Image indicator
         if attached_media_id:
-            stdscr.addstr(3, 0, "📷 Image attached", curses.A_BOLD | curses.color_pair(0))
+            stdscr.addstr(4, 0, "📷 Image attached", curses.A_BOLD | curses.color_pair(0))
 
         # Calculate start position for text input
-        text_start_y = start_y
+        text_start_y = start_y + 1  # Adjusted for extra blank line
 
         # Show ASCII preview if image attached
         if ascii_preview:
@@ -452,7 +454,7 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                 except:
                     pass
             return None
-        elif ch == ord('\n'):  # ENTER - submit
+        elif ch == 4:  # Ctrl+D - submit
             curses.curs_set(0)
             # Clean up temp image if any
             if attached_image_path and os.path.exists(attached_image_path):
@@ -462,6 +464,12 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                     pass
             media_ids = [attached_media_id] if attached_media_id else None
             return ('\n'.join(lines), media_ids)
+        elif ch == ord('\n') or ch == 10:  # ENTER or Ctrl+J - newline
+            current_line = lines[cursor_line]
+            lines[cursor_line] = current_line[:cursor_col]
+            lines.insert(cursor_line + 1, current_line[cursor_col:])
+            cursor_line += 1
+            cursor_col = 0
         elif ch == 22:  # Ctrl+V - attach image from clipboard
             curses.curs_set(0)
             stdscr.clear()
@@ -499,12 +507,6 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
             stdscr.refresh()
             stdscr.getch()
             curses.curs_set(1)
-        elif ch == 10:  # Ctrl+J - newline
-            current_line = lines[cursor_line]
-            lines[cursor_line] = current_line[:cursor_col]
-            lines.insert(cursor_line + 1, current_line[cursor_col:])
-            cursor_line += 1
-            cursor_col = 0
         elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
             if cursor_col > 0:
                 current_line = lines[cursor_line]
@@ -579,7 +581,7 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying
     y_offset += 1
     stdscr.addstr(y_offset, 0, "─" * min(width - 1, 80))
     y_offset += 1
-    stdscr.addstr(y_offset, 0, "Your reply (Ctrl+J for newline, ENTER to send, ESC to cancel):")
+    stdscr.addstr(y_offset, 0, "Your reply (ENTER for newline, Ctrl+D to send, ESC to cancel):")
     y_offset += 1
 
     start_y = y_offset
@@ -619,10 +621,10 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "Replying
         if ch == 27:  # ESC
             curses.curs_set(0)
             return None
-        elif ch == ord('\n'):  # ENTER - submit
+        elif ch == 4:  # Ctrl+D - submit
             curses.curs_set(0)
             return '\n'.join(lines)
-        elif ch == 10:  # Ctrl+J - newline
+        elif ch == ord('\n') or ch == 10:  # ENTER or Ctrl+J - newline
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col]
             lines.insert(cursor_line + 1, current_line[cursor_col:])
