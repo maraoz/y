@@ -379,12 +379,6 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
     """
     curses.noecho()
     curses.curs_set(1)
-    # Set ESC key delay to 1ms for instant response
-    try:
-        if hasattr(curses, 'set_escdelay'):
-            curses.set_escdelay(1)
-    except:
-        pass  # Some implementations don't support this
 
     stdscr.clear()
     height, width = stdscr.getmaxyx()
@@ -555,12 +549,6 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
     """Show reply composition screen and get multiline user input with optional image attachment."""
     curses.noecho()
     curses.curs_set(1)
-    # Set ESC key delay to 1ms for instant response
-    try:
-        if hasattr(curses, 'set_escdelay'):
-            curses.set_escdelay(1)
-    except:
-        pass  # Some implementations don't support this
 
     stdscr.clear()
     height, width = stdscr.getmaxyx()
@@ -1134,10 +1122,6 @@ def main(argv=None):
         # If no command specified, show main menu
         if args.cmd is None:
             def menu_loop(stdscr):
-                # Set ESC key delay to 0 for instant response
-                if hasattr(curses, 'set_escdelay'):
-                    curses.set_escdelay(0)
-
                 while True:
                     selected = main_menu_controller(stdscr)
                     if selected is None:
