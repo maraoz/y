@@ -784,7 +784,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
         height, width = stdscr.getmaxyx()
 
         # Header
-        stdscr.addstr(0, 0, "𝕏", curses.A_BOLD)
+        stdscr.addstr(0, 0, "×", curses.A_BOLD)
         stdscr.addstr(1, 0, "")
         stdscr.addstr(2, 0, "↑↓ navigate · enter select · esc quit", curses.A_DIM)
         stdscr.addstr(3, 0, "")
@@ -942,6 +942,7 @@ def write_menu_controller(stdscr):
     items = [{"type": "new", "text": "new"}]
     current_idx = 0
     loading = True
+    fetch_failed = False
 
     # Try to lazy load previous tweets (non-blocking)
     tweets = []
@@ -961,8 +962,10 @@ def write_menu_controller(stdscr):
             items.append({"type": "tweet", "data": tweet})
         loading = False
     except:
-        # If loading fails, just keep "new" option
+        # If loading fails, show error indication
         loading = False
+        fetch_failed = True
+        items.append({"type": "error", "text": "(fetch failed)"})
 
     # Main selection loop
     while True:
@@ -984,6 +987,8 @@ def write_menu_controller(stdscr):
 
             if item["type"] == "new":
                 line = f"{prefix}new"
+            elif item["type"] == "error":
+                line = f"{prefix}{item['text']}"
             else:
                 tweet = item["data"]
                 text = tweet.get("text", "")
@@ -1014,6 +1019,10 @@ def write_menu_controller(stdscr):
             return None
         elif key == ord('\n'):  # Enter
             selected = items[current_idx]
+
+            # Ignore error items (non-selectable)
+            if selected["type"] == "error":
+                continue
 
             if selected["type"] == "new":
                 # Compose new tweet
