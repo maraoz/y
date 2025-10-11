@@ -345,7 +345,7 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
     # Header
     hint = "enter view" if show_detail_hint else "enter reply"
     stdscr.addstr(0, 0, f"{header}", curses.A_BOLD)
-    stdscr.addstr(1, 0, f"↑↓ navigate · {hint} · q back", curses.A_DIM)
+    stdscr.addstr(1, 0, f"↑↓ navigate · {hint} · esc back", curses.A_DIM)
 
     # Tweet list
     start_line = 2
@@ -772,7 +772,6 @@ def main_menu_controller(stdscr) -> Optional[str]:
     commands = [
         ("timeline", "read"),
         ("post", "write"),
-        ("thread", "thread"),
         ("interact", "mentions"),
         ("engagement", "ego"),
         ("quit", "exit"),
@@ -785,9 +784,9 @@ def main_menu_controller(stdscr) -> Optional[str]:
         height, width = stdscr.getmaxyx()
 
         # Header
-        stdscr.addstr(0, 0, "x", curses.A_BOLD)
+        stdscr.addstr(0, 0, "𝕏", curses.A_BOLD)
         stdscr.addstr(1, 0, "")
-        stdscr.addstr(2, 0, "↑↓ navigate · enter select · q quit", curses.A_DIM)
+        stdscr.addstr(2, 0, "↑↓ navigate · enter select · esc quit", curses.A_DIM)
         stdscr.addstr(3, 0, "")
 
         # Command list
@@ -814,7 +813,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
             current_idx -= 1
         elif key == curses.KEY_DOWN and current_idx < len(commands) - 1:
             current_idx += 1
-        elif key == ord('q') or key == ord('Q'):
+        elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
             return None
         elif key == ord('\n'):  # Enter
             selected_cmd = commands[current_idx][0]
@@ -872,7 +871,7 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
             replies = metrics.get("reply_count", 0)
             stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
 
-            stdscr.addstr(height - 2, 0, "esc back · ↑↓ navigate · q back", curses.A_DIM)
+            stdscr.addstr(height - 2, 0, "↑↓ navigate · esc back", curses.A_DIM)
             stdscr.refresh()
 
             key = stdscr.getch()
@@ -882,7 +881,7 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
                 current_idx -= 1
             elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
                 current_idx += 1
-            elif key == ord('q') or key == ord('Q'):
+            elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
                 break
         else:
             # Show list view
@@ -893,7 +892,7 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
                 current_idx -= 1
             elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
                 current_idx += 1
-            elif key == ord('q') or key == ord('Q'):
+            elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
                 break
             elif key == ord('\n'):  # Enter - show detail
                 detail_view = True
@@ -911,7 +910,7 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
             current_idx -= 1
         elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
             current_idx += 1
-        elif key == ord('q') or key == ord('Q'):
+        elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
             break
         elif key == ord('\n'):  # Enter key
             selected = tweets[current_idx]
@@ -935,34 +934,133 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
 # CLI COMMANDS
 # ============================================================================
 
+def write_menu_controller(stdscr):
+    """Show write menu: new tweet or thread from previous tweets."""
+    curses.curs_set(0)
+
+    # Start with just "new" option
+    items = [{"type": "new", "text": "new"}]
+    current_idx = 0
+    loading = True
+
+    # Try to lazy load previous tweets (non-blocking)
+    tweets = []
+    try:
+        stdscr.clear()
+        stdscr.addstr(0, 0, "write", curses.A_BOLD)
+        stdscr.addstr(1, 0, "↑↓ navigate · enter select · esc back", curses.A_DIM)
+        stdscr.addstr(3, 0, "▸ new", curses.A_REVERSE)
+        stdscr.addstr(4, 0, "  loading⋯", curses.A_DIM)
+        stdscr.refresh()
+
+        # Fetch tweets with short timeout
+        tweets = fetch_user_tweets(limit=5, include_author=True)
+
+        # Add tweets to items
+        for tweet in tweets:
+            items.append({"type": "tweet", "data": tweet})
+        loading = False
+    except:
+        # If loading fails, just keep "new" option
+        loading = False
+
+    # Main selection loop
+    while True:
+        stdscr.clear()
+        height, width = stdscr.getmaxyx()
+
+        # Header
+        stdscr.addstr(0, 0, "write", curses.A_BOLD)
+        stdscr.addstr(1, 0, "↑↓ navigate · enter select · esc back", curses.A_DIM)
+        stdscr.addstr(2, 0, "")
+
+        # Render items
+        start_line = 3
+        for i, item in enumerate(items):
+            if start_line + i >= height - 1:
+                break
+
+            prefix = "▸ " if i == current_idx else "  "
+
+            if item["type"] == "new":
+                line = f"{prefix}new"
+            else:
+                tweet = item["data"]
+                text = tweet.get("text", "")
+                # Truncate long tweets
+                if len(text) > 50:
+                    text = text[:47] + "⋯"
+                line = f"{prefix}{text}"
+
+            if len(line) > width - 1:
+                line = line[:width - 4] + "⋯"
+
+            attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
+            try:
+                stdscr.addstr(start_line + i, 0, line, attr)
+            except curses.error:
+                pass
+
+        stdscr.refresh()
+
+        # Handle input
+        key = stdscr.getch()
+
+        if key == curses.KEY_UP and current_idx > 0:
+            current_idx -= 1
+        elif key == curses.KEY_DOWN and current_idx < len(items) - 1:
+            current_idx += 1
+        elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+            return None
+        elif key == ord('\n'):  # Enter
+            selected = items[current_idx]
+
+            if selected["type"] == "new":
+                # Compose new tweet
+                result = get_text_input(stdscr, "write")
+                if result is None:
+                    continue
+
+                tweet_text, media_ids = result
+
+                stdscr.clear()
+                stdscr.addstr(0, 0, "sending⋯", curses.A_DIM)
+                stdscr.refresh()
+
+                try:
+                    resp = create_tweet(tweet_text, media_ids=media_ids)
+                    tweet_id = resp.get('data', {}).get('id', 'unknown')
+                    show_success_message(stdscr, "posted", tweet_id)
+                    return
+                except Exception as e:
+                    show_error_message(stdscr, str(e))
+            else:
+                # Thread from existing tweet
+                tweet = selected["data"]
+                result = get_reply_input(stdscr, tweet, "continue")
+
+                if result is not None:
+                    reply_text, media_ids = result
+                    stdscr.clear()
+                    stdscr.addstr(0, 0, "sending⋯")
+                    stdscr.refresh()
+
+                    try:
+                        resp = create_tweet(reply_text, reply_to_id=tweet["id"], media_ids=media_ids)
+                        tweet_id = resp.get('data', {}).get('id', 'unknown')
+                        show_success_message(stdscr, "thread posted", tweet_id)
+                        return
+                    except Exception as e:
+                        show_error_message(stdscr, str(e))
+
 def cmd_post(text: Optional[str] = None, stdscr=None):
     """CLI command: post a tweet."""
     if text is None:
-        # Interactive mode - get text via TUI
-        def post_tui(scr):
-            result = get_text_input(scr, "write")
-            if result is None:
-                return None
-
-            tweet_text, media_ids = result
-
-            scr.clear()
-            scr.addstr(0, 0, "sending⋯", curses.A_DIM)
-            scr.refresh()
-
-            try:
-                resp = create_tweet(tweet_text, media_ids=media_ids)
-                tweet_id = resp.get('data', {}).get('id', 'unknown')
-                show_success_message(scr, "posted", tweet_id)
-                return resp
-            except Exception as e:
-                show_error_message(scr, str(e))
-                return None
-
+        # Interactive mode - show write menu
         if stdscr:
-            post_tui(stdscr)
+            write_menu_controller(stdscr)
         else:
-            curses.wrapper(post_tui)
+            curses.wrapper(write_menu_controller)
     else:
         # Direct command mode - use provided text
         resp = create_tweet(text)
@@ -976,7 +1074,11 @@ def cmd_mentions(show_all: bool, limit: int, stdscr=None):
         scr.addstr(0, 0, "loading⋯", curses.A_DIM)
         scr.refresh()
 
-        mentions = fetch_mentions(only_unread=(not show_all), max_results=limit)
+        try:
+            mentions = fetch_mentions(only_unread=(not show_all), max_results=limit)
+        except Exception as e:
+            show_error_message(scr, str(e))
+            return
 
         if not mentions:
             scr.clear()
@@ -1000,7 +1102,11 @@ def cmd_engagement(limit: int, stdscr=None):
         scr.addstr(0, 0, "loading⋯", curses.A_DIM)
         scr.refresh()
 
-        tweets = fetch_user_tweets(limit=limit, include_author=True)
+        try:
+            tweets = fetch_user_tweets(limit=limit, include_author=True)
+        except Exception as e:
+            show_error_message(scr, str(e))
+            return
 
         if not tweets:
             scr.clear()
@@ -1024,7 +1130,11 @@ def cmd_interact(limit: int, stdscr=None):
         scr.addstr(0, 0, "loading⋯", curses.A_DIM)
         scr.refresh()
 
-        mentions = fetch_mentions(only_unread=False, max_results=limit)
+        try:
+            mentions = fetch_mentions(only_unread=False, max_results=limit)
+        except Exception as e:
+            show_error_message(scr, str(e))
+            return
 
         if not mentions:
             scr.clear()
@@ -1048,7 +1158,11 @@ def cmd_thread(limit: int, stdscr=None):
         scr.addstr(0, 0, "loading⋯", curses.A_DIM)
         scr.refresh()
 
-        tweets = fetch_user_tweets(limit=limit, include_author=True)
+        try:
+            tweets = fetch_user_tweets(limit=limit, include_author=True)
+        except Exception as e:
+            show_error_message(scr, str(e))
+            return
 
         if not tweets:
             scr.clear()
@@ -1072,7 +1186,11 @@ def cmd_timeline(limit: int, stdscr=None):
         scr.addstr(0, 0, "loading⋯", curses.A_DIM)
         scr.refresh()
 
-        tweets = fetch_timeline(limit=limit)
+        try:
+            tweets = fetch_timeline(limit=limit)
+        except Exception as e:
+            show_error_message(scr, str(e))
+            return
 
         if not tweets:
             scr.clear()
@@ -1132,8 +1250,6 @@ def main(argv=None):
                         cmd_timeline(limit=5, stdscr=stdscr)
                     elif selected == "post":
                         cmd_post(stdscr=stdscr)
-                    elif selected == "thread":
-                        cmd_thread(limit=5, stdscr=stdscr)
                     elif selected == "interact":
                         cmd_interact(limit=5, stdscr=stdscr)
                     elif selected == "engagement":
