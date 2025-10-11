@@ -901,34 +901,94 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
     """Main controller for interactive tweet browsing TUI (works for mentions or own tweets)."""
     curses.curs_set(0)
     current_idx = 0
+    detail_view = False
 
     while True:
-        render_tweet_list(stdscr, tweets, current_idx, header)
-        key = stdscr.getch()
+        if detail_view:
+            # Show detailed view of selected tweet
+            stdscr.clear()
+            height, width = stdscr.getmaxyx()
 
-        if key == curses.KEY_UP and current_idx > 0:
-            current_idx -= 1
-        elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
-            current_idx += 1
-        elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
-            break
-        elif key == ord('\n'):  # Enter key
-            selected = tweets[current_idx]
-            result = get_reply_input(stdscr, selected, action_label)
+            tweet = tweets[current_idx]
+            author = tweet.get("from", {})
+            username = author.get("username", "unknown")
+            timestamp = format_timestamp(tweet.get("at", ""))
+            text = tweet.get("text", "")
+            metrics = tweet.get("metrics", {})
 
-            if result is not None:
-                reply_text, media_ids = result
-                stdscr.clear()
-                stdscr.addstr(0, 0, "sending⋯")
-                stdscr.refresh()
+            stdscr.addstr(0, 0, f"{current_idx + 1}/{len(tweets)}", curses.A_BOLD)
+            stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
+            stdscr.addstr(2, 0, "")
+            stdscr.addstr(3, 0, "")
+            stdscr.addstr(4, 0, "")
 
-                try:
-                    resp = create_tweet(reply_text, reply_to_id=selected["id"], media_ids=media_ids)
-                    tweet_id = resp.get('data', {}).get('id', 'unknown')
-                    show_success_message(stdscr, "reply sent", tweet_id)
-                    break
-                except Exception as e:
-                    show_error_message(stdscr, str(e))
+            # Word-wrap tweet text
+            y_offset = 5
+            words = text.split()
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 <= width - 1:
+                    current_line += word + " "
+                else:
+                    if y_offset < height - 6:
+                        stdscr.addstr(y_offset, 0, current_line.strip())
+                        y_offset += 1
+                    current_line = word + " "
+            if current_line and y_offset < height - 6:
+                stdscr.addstr(y_offset, 0, current_line.strip())
+                y_offset += 1
+
+            # Metrics
+            y_offset += 1
+            stdscr.addstr(y_offset, 0, "")
+            y_offset += 1
+            likes = metrics.get("like_count", 0)
+            retweets = metrics.get("retweet_count", 0)
+            replies = metrics.get("reply_count", 0)
+            stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
+
+            stdscr.addstr(height - 2, 0, "↑↓ navigate · enter reply · esc back", curses.A_DIM)
+            stdscr.refresh()
+
+            key = stdscr.getch()
+            if key == 27:  # ESC
+                detail_view = False
+            elif key == curses.KEY_UP and current_idx > 0:
+                current_idx -= 1
+            elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
+                current_idx += 1
+            elif key == ord('q') or key == ord('Q'):
+                break
+            elif key == ord('\n'):  # Enter - reply
+                selected = tweets[current_idx]
+                result = get_reply_input(stdscr, selected, action_label)
+
+                if result is not None:
+                    reply_text, media_ids = result
+                    stdscr.clear()
+                    stdscr.addstr(0, 0, "sending⋯")
+                    stdscr.refresh()
+
+                    try:
+                        resp = create_tweet(reply_text, reply_to_id=selected["id"], media_ids=media_ids)
+                        tweet_id = resp.get('data', {}).get('id', 'unknown')
+                        show_success_message(stdscr, "reply sent", tweet_id)
+                        break
+                    except Exception as e:
+                        show_error_message(stdscr, str(e))
+        else:
+            # Show list view
+            render_tweet_list(stdscr, tweets, current_idx, header, show_detail_hint=True)
+            key = stdscr.getch()
+
+            if key == curses.KEY_UP and current_idx > 0:
+                current_idx -= 1
+            elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
+                current_idx += 1
+            elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+                break
+            elif key == ord('\n'):  # Enter - show detail
+                detail_view = True
 
 # ============================================================================
 # CLI COMMANDS
