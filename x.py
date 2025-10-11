@@ -5,12 +5,15 @@ import os
 import json
 import argparse
 import requests
-import curses
 import subprocess
 import tempfile
 from datetime import datetime
 from requests_oauthlib import OAuth1
 from typing import Optional, Dict, Any, List, Tuple
+
+# Set ESC delay to 25ms before importing curses (some systems require this)
+os.environ.setdefault('ESCDELAY', '25')
+import curses
 
 from config import X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET
 
@@ -377,8 +380,11 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
     curses.noecho()
     curses.curs_set(1)
     # Set ESC key delay to 1ms for instant response
-    if hasattr(curses, 'set_escdelay'):
-        curses.set_escdelay(1)
+    try:
+        if hasattr(curses, 'set_escdelay'):
+            curses.set_escdelay(1)
+    except:
+        pass  # Some implementations don't support this
 
     stdscr.clear()
     height, width = stdscr.getmaxyx()
@@ -550,8 +556,11 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
     curses.noecho()
     curses.curs_set(1)
     # Set ESC key delay to 1ms for instant response
-    if hasattr(curses, 'set_escdelay'):
-        curses.set_escdelay(1)
+    try:
+        if hasattr(curses, 'set_escdelay'):
+            curses.set_escdelay(1)
+    except:
+        pass  # Some implementations don't support this
 
     stdscr.clear()
     height, width = stdscr.getmaxyx()
