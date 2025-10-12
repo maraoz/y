@@ -18,6 +18,19 @@ import curses
 from config import X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET
 
 # ============================================================================
+# KEY CODES
+# ============================================================================
+
+KEY_ESC = 27
+KEY_CTRL_D = 4
+KEY_CTRL_V = 22
+KEY_NEWLINE = 10
+KEY_BACKSPACE_1 = 127
+KEY_BACKSPACE_2 = 8
+KEY_PRINTABLE_START = 32
+KEY_PRINTABLE_END = 126
+
+# ============================================================================
 # CONFIGURATION
 # ============================================================================
 
@@ -298,41 +311,6 @@ def upload_media(image_path: str) -> Optional[str]:
     except Exception as e:
         raise Exception(f"Media upload error: {e}")
 
-def image_to_ascii(image_path: str, width: int = 40) -> List[str]:
-    """
-    Convert image to ASCII art.
-    Returns list of ASCII art lines.
-    """
-    try:
-        from PIL import Image
-
-        # ASCII characters from dark to light
-        ascii_chars = " .:-=+*#%@"
-
-        # Open and resize image
-        img = Image.open(image_path)
-        aspect_ratio = img.height / img.width
-        height = int(width * aspect_ratio * 0.5)  # 0.5 to account for character aspect ratio
-        img = img.resize((width, height))
-
-        # Convert to grayscale
-        img = img.convert('L')
-
-        # Convert to ASCII
-        pixels = list(img.getdata())
-        ascii_art = []
-        for i in range(0, len(pixels), width):
-            row = pixels[i:i+width]
-            ascii_line = ''.join([ascii_chars[min(int(pixel * len(ascii_chars) / 256), len(ascii_chars)-1)] for pixel in row])
-            ascii_art.append(ascii_line)
-
-        return ascii_art
-    except ImportError:
-        # PIL not available
-        return ["[Image preview unavailable - install Pillow: pip install Pillow]"]
-    except Exception as e:
-        return [f"[Image preview error: {e}]"]
-
 # ============================================================================
 # TUI COMPONENTS
 # ============================================================================
@@ -372,7 +350,7 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
 
     stdscr.refresh()
 
-def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, Optional[List[str]]]]:
+def get_multiline_input(stdscr, header_lines: List[str], help_text: str = "ctrl+v image · enter newline · ctrl+d send · esc cancel") -> Optional[Tuple[str, Optional[List[str]]]]:
     """
     Get multiline text input from user in TUI with optional image attachment.
     Returns tuple of (text, media_ids) or None if cancelled.
@@ -383,33 +361,41 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
     stdscr.clear()
     height, width = stdscr.getmaxyx()
 
-    # Input area starts at line 4
     lines = [""]
     cursor_line = 0
     cursor_col = 0
-    start_y = 4
 
-    # Image attachment state (supports up to 4 images)
     attached_image_paths = []
     attached_media_ids = []
 
     def render_text():
         stdscr.clear()
 
-        # Header
-        stdscr.addstr(0, 0, prompt, curses.A_BOLD)
-        stdscr.addstr(1, 0, "")
-        stdscr.addstr(2, 0, "ctrl+v image · enter newline · ctrl+d send · esc cancel", curses.A_DIM)
-        stdscr.addstr(3, 0, "")
+        # Render header lines
+        y = 0
+        for i, line in enumerate(header_lines):
+            if i == 0:
+                stdscr.addstr(y, 0, line, curses.A_BOLD)
+            else:
+                try:
+                    stdscr.addstr(y, 0, line, curses.A_DIM if line else curses.A_NORMAL)
+                except curses.error:
+                    pass
+            y += 1
+
+        # Help text
+        stdscr.addstr(y, 0, help_text, curses.A_DIM)
+        y += 1
 
         # Image indicator
         if attached_media_ids:
             count = len(attached_media_ids)
             text = f"📷 {count}" if count > 1 else "📷"
-            stdscr.addstr(4, 0, text, curses.A_DIM)
+            stdscr.addstr(y, 0, text, curses.A_DIM)
+            y += 1
 
         # Calculate start position for text input
-        text_start_y = start_y + 2  # Space for instructions and image indicator
+        text_start_y = y
 
         # Clear text input area
         for i in range(text_start_y, height - 1):
@@ -436,34 +422,34 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
         render_text()
         ch = stdscr.getch()
 
-        if ch == 27:  # ESC
+        if ch == KEY_ESC:
             curses.curs_set(0)
             # Clean up temp images
             for path in attached_image_paths:
                 if os.path.exists(path):
                     try:
                         os.unlink(path)
-                    except:
+                    except Exception:
                         pass
             return None
-        elif ch == 4:  # Ctrl+D - submit
+        elif ch == KEY_CTRL_D:
             curses.curs_set(0)
             # Clean up temp images
             for path in attached_image_paths:
                 if os.path.exists(path):
                     try:
                         os.unlink(path)
-                    except:
+                    except Exception:
                         pass
             media_ids = attached_media_ids if attached_media_ids else None
             return ('\n'.join(lines), media_ids)
-        elif ch == ord('\n') or ch == 10:  # ENTER or Ctrl+J - newline
+        elif ch == ord('\n') or ch == KEY_NEWLINE:
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col]
             lines.insert(cursor_line + 1, current_line[cursor_col:])
             cursor_line += 1
             cursor_col = 0
-        elif ch == 22:  # Ctrl+V - attach image from clipboard
+        elif ch == KEY_CTRL_V:
             curses.curs_set(0)
             stdscr.clear()
 
@@ -508,7 +494,7 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
                 stdscr.refresh()
                 stdscr.getch()
                 curses.curs_set(1)
-        elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
+        elif ch == curses.KEY_BACKSPACE or ch == KEY_BACKSPACE_1 or ch == KEY_BACKSPACE_2:
             if cursor_col > 0:
                 current_line = lines[cursor_line]
                 lines[cursor_line] = current_line[:cursor_col-1] + current_line[cursor_col:]
@@ -540,10 +526,14 @@ def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, O
             elif cursor_line < len(lines) - 1:
                 cursor_line += 1
                 cursor_col = 0
-        elif 32 <= ch <= 126:  # Printable characters
+        elif KEY_PRINTABLE_START <= ch <= KEY_PRINTABLE_END:
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
             cursor_col += 1
+
+def get_text_input(stdscr, prompt: str = "Enter text:") -> Optional[Tuple[str, Optional[List[str]]]]:
+    """Get text input for composing a new tweet."""
+    return get_multiline_input(stdscr, [prompt])
 
 def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying to") -> Optional[Tuple[str, Optional[List[str]]]]:
     """Show reply composition screen and get multiline user input with optional image attachment."""
@@ -632,28 +622,28 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
         render_input()
         ch = stdscr.getch()
 
-        if ch == 27:  # ESC
+        if ch == KEY_ESC:
             curses.curs_set(0)
             # Clean up temp images
             for path in attached_image_paths:
                 if os.path.exists(path):
                     try:
                         os.unlink(path)
-                    except:
+                    except Exception:
                         pass
             return None
-        elif ch == 4:  # Ctrl+D - submit
+        elif ch == KEY_CTRL_D:
             curses.curs_set(0)
             # Clean up temp images
             for path in attached_image_paths:
                 if os.path.exists(path):
                     try:
                         os.unlink(path)
-                    except:
+                    except Exception:
                         pass
             media_ids = attached_media_ids if attached_media_ids else None
             return ('\n'.join(lines), media_ids)
-        elif ch == 22:  # Ctrl+V - attach image from clipboard
+        elif ch == KEY_CTRL_V:
             curses.curs_set(0)
             stdscr.clear()
 
@@ -698,13 +688,13 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
                 stdscr.refresh()
                 stdscr.getch()
                 curses.curs_set(1)
-        elif ch == ord('\n') or ch == 10:  # ENTER or Ctrl+J - newline
+        elif ch == ord('\n') or ch == KEY_NEWLINE:
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col]
             lines.insert(cursor_line + 1, current_line[cursor_col:])
             cursor_line += 1
             cursor_col = 0
-        elif ch == curses.KEY_BACKSPACE or ch == 127 or ch == 8:
+        elif ch == curses.KEY_BACKSPACE or ch == KEY_BACKSPACE_1 or ch == KEY_BACKSPACE_2:
             if cursor_col > 0:
                 current_line = lines[cursor_line]
                 lines[cursor_line] = current_line[:cursor_col-1] + current_line[cursor_col:]
@@ -736,7 +726,7 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
             elif cursor_line < len(lines) - 1:
                 cursor_line += 1
                 cursor_col = 0
-        elif 32 <= ch <= 126:  # Printable characters
+        elif KEY_PRINTABLE_START <= ch <= KEY_PRINTABLE_END:
             current_line = lines[cursor_line]
             lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
             cursor_col += 1
@@ -754,11 +744,76 @@ def show_success_message(stdscr, message: str, tweet_id: str):
 def show_error_message(stdscr, error: str):
     """Display error message in TUI."""
     stdscr.clear()
-    stdscr.addstr(0, 0, "✗", curses.A_BOLD)
-    stdscr.addstr(1, 0, f"{error}", curses.A_DIM)
-    stdscr.addstr(3, 0, "press any key", curses.A_DIM)
+    height, width = stdscr.getmaxyx()
+
+    stdscr.addstr(0, 0, "error", curses.A_BOLD)
+    stdscr.addstr(1, 0, "")
+
+    # Word-wrap error message
+    y_offset = 2
+    for line in error.split('\n'):
+        words = line.split()
+        current_line = ""
+        for word in words:
+            if len(current_line) + len(word) + 1 <= width - 1:
+                current_line += word + " "
+            else:
+                if y_offset < height - 4:
+                    stdscr.addstr(y_offset, 0, current_line.strip())
+                    y_offset += 1
+                current_line = word + " "
+        if current_line and y_offset < height - 4:
+            stdscr.addstr(y_offset, 0, current_line.strip())
+            y_offset += 1
+
+    stdscr.addstr(height - 2, 0, "press any key to continue", curses.A_DIM)
     stdscr.refresh()
     stdscr.getch()
+
+def render_tweet_detail(stdscr, tweet: Dict[str, Any], current_idx: int, total_tweets: int, hint: str):
+    """Render detailed view of a single tweet."""
+    stdscr.clear()
+    height, width = stdscr.getmaxyx()
+
+    author = tweet.get("from", {})
+    username = author.get("username", "unknown")
+    timestamp = format_timestamp(tweet.get("at", ""))
+    text = tweet.get("text", "")
+    metrics = tweet.get("metrics", {})
+
+    stdscr.addstr(0, 0, f"{current_idx + 1}/{total_tweets}", curses.A_BOLD)
+    stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
+    stdscr.addstr(2, 0, "")
+    stdscr.addstr(3, 0, "")
+    stdscr.addstr(4, 0, "")
+
+    # Word-wrap tweet text
+    y_offset = 5
+    words = text.split()
+    current_line = ""
+    for word in words:
+        if len(current_line) + len(word) + 1 <= width - 1:
+            current_line += word + " "
+        else:
+            if y_offset < height - 6:
+                stdscr.addstr(y_offset, 0, current_line.strip())
+                y_offset += 1
+            current_line = word + " "
+    if current_line and y_offset < height - 6:
+        stdscr.addstr(y_offset, 0, current_line.strip())
+        y_offset += 1
+
+    # Metrics
+    y_offset += 1
+    stdscr.addstr(y_offset, 0, "")
+    y_offset += 1
+    likes = metrics.get("like_count", 0)
+    retweets = metrics.get("retweet_count", 0)
+    replies = metrics.get("reply_count", 0)
+    stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
+
+    stdscr.addstr(height - 2, 0, hint, curses.A_DIM)
+    stdscr.refresh()
 
 # ============================================================================
 # TUI CONTROLLER
@@ -813,7 +868,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
             current_idx -= 1
         elif key == curses.KEY_DOWN and current_idx < len(commands) - 1:
             current_idx += 1
-        elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+        elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
             return None
         elif key == ord('\n'):  # Enter
             selected_cmd = commands[current_idx][0]
@@ -829,59 +884,15 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
 
     while True:
         if detail_view:
-            # Show detailed view of selected tweet
-            stdscr.clear()
-            height, width = stdscr.getmaxyx()
-
-            tweet = tweets[current_idx]
-            author = tweet.get("from", {})
-            username = author.get("username", "unknown")
-            timestamp = format_timestamp(tweet.get("at", ""))
-            text = tweet.get("text", "")
-            metrics = tweet.get("metrics", {})
-
-            stdscr.addstr(0, 0, f"{current_idx + 1}/{len(tweets)}", curses.A_BOLD)
-            stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
-            stdscr.addstr(2, 0, "")
-            stdscr.addstr(3, 0, "")
-            stdscr.addstr(4, 0, "")
-
-            # Word-wrap tweet text
-            y_offset = 5
-            words = text.split()
-            current_line = ""
-            for word in words:
-                if len(current_line) + len(word) + 1 <= width - 1:
-                    current_line += word + " "
-                else:
-                    if y_offset < height - 6:
-                        stdscr.addstr(y_offset, 0, current_line.strip())
-                        y_offset += 1
-                    current_line = word + " "
-            if current_line and y_offset < height - 6:
-                stdscr.addstr(y_offset, 0, current_line.strip())
-                y_offset += 1
-
-            # Metrics
-            y_offset += 1
-            stdscr.addstr(y_offset, 0, "")
-            y_offset += 1
-            likes = metrics.get("like_count", 0)
-            retweets = metrics.get("retweet_count", 0)
-            replies = metrics.get("reply_count", 0)
-            stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
-
-            stdscr.addstr(height - 2, 0, "↑↓ navigate · esc back", curses.A_DIM)
-            stdscr.refresh()
-
+            render_tweet_detail(stdscr, tweets[current_idx], current_idx, len(tweets), "↑↓ navigate · esc back")
             key = stdscr.getch()
-            if key == 27:  # ESC
+            if key == KEY_ESC:
                 detail_view = False
             elif key == curses.KEY_UP and current_idx > 0:
                 current_idx -= 1
             elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
                 current_idx += 1
-            elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+            elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
                 break
         else:
             # Show list view
@@ -892,7 +903,7 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
                 current_idx -= 1
             elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
                 current_idx += 1
-            elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+            elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
                 break
             elif key == ord('\n'):  # Enter - show detail
                 detail_view = True
@@ -905,53 +916,9 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
 
     while True:
         if detail_view:
-            # Show detailed view of selected tweet
-            stdscr.clear()
-            height, width = stdscr.getmaxyx()
-
-            tweet = tweets[current_idx]
-            author = tweet.get("from", {})
-            username = author.get("username", "unknown")
-            timestamp = format_timestamp(tweet.get("at", ""))
-            text = tweet.get("text", "")
-            metrics = tweet.get("metrics", {})
-
-            stdscr.addstr(0, 0, f"{current_idx + 1}/{len(tweets)}", curses.A_BOLD)
-            stdscr.addstr(1, 0, f"@{username} · {timestamp}", curses.A_DIM)
-            stdscr.addstr(2, 0, "")
-            stdscr.addstr(3, 0, "")
-            stdscr.addstr(4, 0, "")
-
-            # Word-wrap tweet text
-            y_offset = 5
-            words = text.split()
-            current_line = ""
-            for word in words:
-                if len(current_line) + len(word) + 1 <= width - 1:
-                    current_line += word + " "
-                else:
-                    if y_offset < height - 6:
-                        stdscr.addstr(y_offset, 0, current_line.strip())
-                        y_offset += 1
-                    current_line = word + " "
-            if current_line and y_offset < height - 6:
-                stdscr.addstr(y_offset, 0, current_line.strip())
-                y_offset += 1
-
-            # Metrics
-            y_offset += 1
-            stdscr.addstr(y_offset, 0, "")
-            y_offset += 1
-            likes = metrics.get("like_count", 0)
-            retweets = metrics.get("retweet_count", 0)
-            replies = metrics.get("reply_count", 0)
-            stdscr.addstr(y_offset, 0, f"❤️ {likes}  🔁 {retweets}  💬 {replies}", curses.A_DIM)
-
-            stdscr.addstr(height - 2, 0, "↑↓ navigate · enter reply · esc back", curses.A_DIM)
-            stdscr.refresh()
-
+            render_tweet_detail(stdscr, tweets[current_idx], current_idx, len(tweets), "↑↓ navigate · enter reply · esc back")
             key = stdscr.getch()
-            if key == 27:  # ESC
+            if key == KEY_ESC:
                 detail_view = False
             elif key == curses.KEY_UP and current_idx > 0:
                 current_idx -= 1
@@ -985,7 +952,7 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                 current_idx -= 1
             elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
                 current_idx += 1
-            elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+            elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
                 break
             elif key == ord('\n'):  # Enter - show detail
                 detail_view = True
@@ -998,14 +965,9 @@ def write_menu_controller(stdscr):
     """Show write menu: new tweet or thread from previous tweets."""
     curses.curs_set(0)
 
-    # Start with just "new" option
     items = [{"type": "new", "text": "new"}]
     current_idx = 0
-    loading = True
-    fetch_failed = False
 
-    # Try to lazy load previous tweets (non-blocking)
-    tweets = []
     try:
         stdscr.clear()
         stdscr.addstr(0, 0, "write", curses.A_BOLD)
@@ -1014,17 +976,10 @@ def write_menu_controller(stdscr):
         stdscr.addstr(4, 0, "  loading⋯", curses.A_DIM)
         stdscr.refresh()
 
-        # Fetch tweets with short timeout
         tweets = fetch_user_tweets(limit=5, include_author=True)
-
-        # Add tweets to items
         for tweet in tweets:
             items.append({"type": "tweet", "data": tweet})
-        loading = False
-    except:
-        # If loading fails, show error indication
-        loading = False
-        fetch_failed = True
+    except Exception:
         items.append({"type": "error", "text": "(fetch failed)"})
 
     # Main selection loop
@@ -1075,7 +1030,7 @@ def write_menu_controller(stdscr):
             current_idx -= 1
         elif key == curses.KEY_DOWN and current_idx < len(items) - 1:
             current_idx += 1
-        elif key == ord('q') or key == ord('Q') or key == 27:  # q or ESC
+        elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
             return None
         elif key == ord('\n'):  # Enter
             selected = items[current_idx]
