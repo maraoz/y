@@ -130,6 +130,21 @@ def get_authenticated_user() -> Dict[str, Any]:
     """Get the authenticated user's information."""
     return api_request("GET", "/2/users/me", params={"user.fields": "username"})
 
+def get_cached_user() -> Dict[str, Any]:
+    """Get authenticated user info from cache, or fetch and cache if needed."""
+    state = load_state()
+
+    # Check if we have cached user data
+    if "user_cache" in state:
+        return state["user_cache"]
+
+    # Fetch from API and cache it
+    user_data = get_authenticated_user()
+    state["user_cache"] = user_data
+    save_state(state)
+
+    return user_data
+
 def create_tweet(text: str, reply_to_id: Optional[str] = None, media_ids: Optional[List[str]] = None) -> Dict[str, Any]:
     """Post a tweet, optionally as a reply and/or with media attachments."""
     payload = {"text": text}
@@ -141,7 +156,7 @@ def create_tweet(text: str, reply_to_id: Optional[str] = None, media_ids: Option
 
 def fetch_mentions(only_unread: bool = False, max_results: int = 20) -> List[Dict[str, Any]]:
     """Fetch mentions for the authenticated user."""
-    me = get_authenticated_user()["data"]
+    me = get_cached_user()["data"]
     uid = me["id"]
     state = load_state()
     since_id = state.get("mentions_since_id") if only_unread else None
@@ -187,7 +202,7 @@ def fetch_mentions(only_unread: bool = False, max_results: int = 20) -> List[Dic
 
 def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dict[str, Any]]:
     """Fetch recent tweets from the authenticated user."""
-    me = get_authenticated_user()["data"]
+    me = get_cached_user()["data"]
     uid = me["id"]
 
     params = {
@@ -219,7 +234,7 @@ def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dic
 
 def fetch_timeline(limit: int = 10) -> List[Dict[str, Any]]:
     """Fetch recent tweets from users the authenticated user follows."""
-    me = get_authenticated_user()["data"]
+    me = get_cached_user()["data"]
     uid = me["id"]
 
     params = {
@@ -940,7 +955,7 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                     try:
                         resp = create_tweet(reply_text, reply_to_id=selected["id"], media_ids=media_ids)
                         tweet_id = resp.get('data', {}).get('id', 'unknown')
-                        me = get_authenticated_user()["data"]
+                        me = get_cached_user()["data"]
                         username = me.get("username", "unknown")
                         tweet_url = f"https://x.com/{username}/status/{tweet_id}"
                         show_success_message(stdscr, "reply sent", tweet_url)
@@ -1058,7 +1073,7 @@ def write_menu_controller(stdscr):
                 try:
                     resp = create_tweet(tweet_text, media_ids=media_ids)
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
-                    me = get_authenticated_user()["data"]
+                    me = get_cached_user()["data"]
                     username = me.get("username", "unknown")
                     tweet_url = f"https://x.com/{username}/status/{tweet_id}"
                     show_success_message(stdscr, "posted", tweet_url)
@@ -1079,7 +1094,7 @@ def write_menu_controller(stdscr):
                     try:
                         resp = create_tweet(reply_text, reply_to_id=tweet["id"], media_ids=media_ids)
                         tweet_id = resp.get('data', {}).get('id', 'unknown')
-                        me = get_authenticated_user()["data"]
+                        me = get_cached_user()["data"]
                         username = me.get("username", "unknown")
                         tweet_url = f"https://x.com/{username}/status/{tweet_id}"
                         show_success_message(stdscr, "thread posted", tweet_url)
