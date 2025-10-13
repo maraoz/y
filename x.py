@@ -731,13 +731,14 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
             lines[cursor_line] = current_line[:cursor_col] + chr(ch) + current_line[cursor_col:]
             cursor_col += 1
 
-def show_success_message(stdscr, message: str, tweet_id: str):
-    """Display success message after sending a reply."""
+def show_success_message(stdscr, message: str, tweet_url: str):
+    """Display success message after sending a tweet."""
     stdscr.clear()
     stdscr.addstr(0, 0, "✓", curses.A_BOLD)
     stdscr.addstr(1, 0, message, curses.A_DIM)
-    stdscr.addstr(2, 0, f"{tweet_id}", curses.A_DIM)
-    stdscr.addstr(4, 0, "press any key", curses.A_DIM)
+    stdscr.addstr(2, 0, "")
+    stdscr.addstr(3, 0, tweet_url, curses.A_DIM)
+    stdscr.addstr(5, 0, "press any key", curses.A_DIM)
     stdscr.refresh()
     stdscr.getch()
 
@@ -939,7 +940,10 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                     try:
                         resp = create_tweet(reply_text, reply_to_id=selected["id"], media_ids=media_ids)
                         tweet_id = resp.get('data', {}).get('id', 'unknown')
-                        show_success_message(stdscr, "reply sent", tweet_id)
+                        me = get_authenticated_user()["data"]
+                        username = me.get("username", "unknown")
+                        tweet_url = f"https://x.com/{username}/status/{tweet_id}"
+                        show_success_message(stdscr, "reply sent", tweet_url)
                         break
                     except Exception as e:
                         show_error_message(stdscr, str(e))
@@ -1054,7 +1058,10 @@ def write_menu_controller(stdscr):
                 try:
                     resp = create_tweet(tweet_text, media_ids=media_ids)
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
-                    show_success_message(stdscr, "posted", tweet_id)
+                    me = get_authenticated_user()["data"]
+                    username = me.get("username", "unknown")
+                    tweet_url = f"https://x.com/{username}/status/{tweet_id}"
+                    show_success_message(stdscr, "posted", tweet_url)
                     return
                 except Exception as e:
                     show_error_message(stdscr, str(e))
@@ -1072,7 +1079,10 @@ def write_menu_controller(stdscr):
                     try:
                         resp = create_tweet(reply_text, reply_to_id=tweet["id"], media_ids=media_ids)
                         tweet_id = resp.get('data', {}).get('id', 'unknown')
-                        show_success_message(stdscr, "thread posted", tweet_id)
+                        me = get_authenticated_user()["data"]
+                        username = me.get("username", "unknown")
+                        tweet_url = f"https://x.com/{username}/status/{tweet_id}"
+                        show_success_message(stdscr, "thread posted", tweet_url)
                         return
                     except Exception as e:
                         show_error_message(stdscr, str(e))
