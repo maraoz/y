@@ -11,8 +11,8 @@ from datetime import datetime
 from requests_oauthlib import OAuth1
 from typing import Optional, Dict, Any, List, Tuple
 
-# Set ESC delay to 25ms before importing curses (some systems require this)
-os.environ.setdefault('ESCDELAY', '25')
+# Set ESC delay to 100ms before importing curses (prevents Option+arrow from being interpreted as ESC)
+os.environ.setdefault('ESCDELAY', '100')
 import curses
 
 from config import X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET
@@ -433,11 +433,26 @@ def get_multiline_input(stdscr, header_lines: List[str], help_text: str = "ctrl+
             pass
         stdscr.refresh()
 
+    def is_real_escape(stdscr) -> bool:
+        """Check if ESC is standalone or part of escape sequence."""
+        stdscr.nodelay(True)
+        try:
+            next_ch = stdscr.getch()
+            if next_ch == -1:
+                # No more chars waiting, it's a real ESC
+                return True
+            else:
+                # More chars waiting, it's an escape sequence - consume it
+                # This handles Option+arrow and other Alt combinations
+                return False
+        finally:
+            stdscr.nodelay(False)
+
     while True:
         render_text()
         ch = stdscr.getch()
 
-        if ch == KEY_ESC:
+        if ch == KEY_ESC and is_real_escape(stdscr):
             curses.curs_set(0)
             # Clean up temp images
             for path in attached_image_paths:
@@ -633,11 +648,26 @@ def get_reply_input(stdscr, tweet: Dict[str, Any], action_label: str = "replying
             pass
         stdscr.refresh()
 
+    def is_real_escape(stdscr) -> bool:
+        """Check if ESC is standalone or part of escape sequence."""
+        stdscr.nodelay(True)
+        try:
+            next_ch = stdscr.getch()
+            if next_ch == -1:
+                # No more chars waiting, it's a real ESC
+                return True
+            else:
+                # More chars waiting, it's an escape sequence - consume it
+                # This handles Option+arrow and other Alt combinations
+                return False
+        finally:
+            stdscr.nodelay(False)
+
     while True:
         render_input()
         ch = stdscr.getch()
 
-        if ch == KEY_ESC:
+        if ch == KEY_ESC and is_real_escape(stdscr):
             curses.curs_set(0)
             # Clean up temp images
             for path in attached_image_paths:
