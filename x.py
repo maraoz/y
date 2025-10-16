@@ -871,10 +871,10 @@ def main_menu_controller(stdscr) -> Optional[str]:
     stdscr.clear()
 
     commands = [
-        ("timeline", "read"),
         ("post", "write"),
         ("interact", "mentions"),
         ("engagement", "ego"),
+        ("timeline", "catchup"),
         ("quit", "exit"),
     ]
 
@@ -1029,7 +1029,7 @@ def write_menu_controller(stdscr):
         for tweet in tweets:
             items.append({"type": "tweet", "data": tweet})
     except Exception:
-        items.append({"type": "error", "text": "(fetch failed)"})
+        items.append({"type": "error", "text": "(failed to fetch previous posts)"})
 
     # Main selection loop
     while True:
@@ -1279,7 +1279,7 @@ def cmd_timeline(limit: int, stdscr=None):
             scr.getch()
             return
 
-        browse_tweets_controller(scr, tweets, "read")
+        browse_tweets_controller(scr, tweets, "catchup")
 
     if stdscr:
         timeline_tui(stdscr)
@@ -1325,14 +1325,14 @@ def main(argv=None):
                         return
 
                     # Execute selected command (pass stdscr to stay in curses mode)
-                    if selected == "timeline":
-                        cmd_timeline(limit=5, stdscr=stdscr)
-                    elif selected == "post":
+                    if selected == "post":
                         cmd_post(stdscr=stdscr)
                     elif selected == "interact":
                         cmd_interact(limit=5, stdscr=stdscr)
                     elif selected == "engagement":
                         cmd_engagement(limit=5, stdscr=stdscr)
+                    elif selected == "timeline":
+                        cmd_timeline(limit=5, stdscr=stdscr)
                     # Loop back to main menu
 
             curses.wrapper(menu_loop)
