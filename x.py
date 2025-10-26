@@ -174,6 +174,34 @@ def fetch_mentions(only_unread: bool = False, max_results: int = 20) -> List[Dic
         })
     return mentions
 
+def get_cached_tweets() -> List[Dict[str, Any]]:
+    """Get cached tweets from local state."""
+    state = load_state()
+    return state.get("tweets_cache", [])
+
+def add_tweet_to_cache(tweet_id: str, tweet_text: str) -> None:
+    """Add newly posted tweet to cache (prepends to list)."""
+    me = get_cached_user()["data"]
+    state = load_state()
+    cache = state.get("tweets_cache", [])
+
+    new_tweet = {
+        "id": tweet_id,
+        "at": datetime.now().isoformat() + "Z",
+        "text": tweet_text,
+        "metrics": {"retweet_count": 0, "reply_count": 0, "like_count": 0, "quote_count": 0},
+        "from": {
+            "id": me["id"],
+            "username": me.get("username"),
+            "name": me.get("name"),
+        }
+    }
+
+    # Prepend new tweet and keep max 100 cached tweets
+    cache.insert(0, new_tweet)
+    state["tweets_cache"] = cache[:100]
+    save_state(state)
+
 def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dict[str, Any]]:
     me = get_cached_user()["data"]
     params = {
@@ -199,6 +227,13 @@ def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dic
                 "name": me.get("name"),
             }
         result.append(tweet_data)
+
+    # Cache tweets for offline access (useful for threading when API is down)
+    if result:
+        state = load_state()
+        state["tweets_cache"] = result
+        save_state(state)
+
     return result
 
 def fetch_timeline(limit: int = 10) -> List[Dict[str, Any]]:
@@ -697,6 +732,7 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                         me = get_cached_user()["data"]
                         tweet_id = resp.get('data', {}).get('id', 'unknown')
                         tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
+                        add_tweet_to_cache(tweet_id, reply_text)
                         show_success_message(stdscr, "reply sent", tweet_url)
                         break
                     except Exception as e:
@@ -731,7 +767,14 @@ def write_menu_controller(stdscr):
         for tweet in tweets:
             items.append({"type": "tweet", "data": tweet})
     except Exception:
-        items.append({"type": "error", "text": "(failed to fetch previous posts)"})
+        # Try cached tweets as fallback
+        cached = get_cached_tweets()
+        if cached:
+            for tweet in cached[:5]:
+                items.append({"type": "tweet", "data": tweet})
+            items.append({"type": "error", "text": "(using cached tweets)"})
+        else:
+            items.append({"type": "error", "text": "(failed to fetch previous posts)"})
 
     while True:
         stdscr.clear()
@@ -795,6 +838,7 @@ def write_menu_controller(stdscr):
                     me = get_cached_user()["data"]
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
                     tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
+                    add_tweet_to_cache(tweet_id, tweet_text)
                     show_success_message(stdscr, "posted", tweet_url)
                     return
                 except Exception as e:
@@ -815,6 +859,7 @@ def write_menu_controller(stdscr):
                     me = get_cached_user()["data"]
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
                     tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
+                    add_tweet_to_cache(tweet_id, reply_text)
                     show_success_message(stdscr, "thread posted", tweet_url)
                     return
                 except Exception as e:
@@ -833,7 +878,9 @@ def cmd_post(text: Optional[str] = None, stdscr=None):
     else:
         resp = create_tweet(text)
         data = resp.get("data", {})
-        print(json.dumps({"id": data.get("id"), "text": data.get("text")}, ensure_ascii=False))
+        tweet_id = data.get("id")
+        add_tweet_to_cache(tweet_id, text)
+        print(json.dumps({"id": tweet_id, "text": data.get("text")}, ensure_ascii=False))
 
 def cmd_mentions(show_all: bool, limit: int, stdscr=None):
     def mentions_tui(scr):
@@ -910,17 +957,28 @@ def cmd_thread(limit: int, stdscr=None):
         scr.addstr(0, 0, MSG_LOADING, curses.A_DIM)
         scr.refresh()
 
+        tweets = None
+        using_cache = False
+
         try:
             tweets = fetch_user_tweets(limit=limit, include_author=True)
         except Exception as e:
-            show_error_message(scr, str(e))
-            return
+            # Try cached tweets as fallback
+            cached = get_cached_tweets()
+            if cached:
+                tweets = cached[:limit]
+                using_cache = True
+            else:
+                show_error_message(scr, str(e))
+                return
 
         if not tweets:
             show_empty_state(scr)
             return
 
-        interactive_tweet_controller(scr, tweets, "thread", "continue")
+        # If using cached data, show indicator in header
+        header = "thread (cached)" if using_cache else "thread"
+        interactive_tweet_controller(scr, tweets, header, "continue")
 
     if stdscr:
         thread_tui(stdscr)
