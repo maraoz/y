@@ -755,26 +755,39 @@ def write_menu_controller(stdscr):
     items = [{"type": "new", "text": "new"}]
     current_idx = 0
 
+    # Always show cached tweets first for instant response
+    cached = get_cached_tweets()
+    for tweet in cached[:5]:
+        items.append({"type": "tweet", "data": tweet})
+
+    # Try to fetch fresh tweets and merge with cache
     try:
         stdscr.clear()
         stdscr.addstr(0, 0, "write", curses.A_BOLD)
         stdscr.addstr(1, 0, "↑↓ navigate · enter select · esc back", curses.A_DIM)
         stdscr.addstr(3, 0, "▸ new", curses.A_REVERSE)
-        stdscr.addstr(4, 0, f"  {MSG_LOADING}", curses.A_DIM)
+        if cached:
+            stdscr.addstr(4, 0, f"  {cached[0]['text'][:50]}", curses.A_DIM)
+        stdscr.addstr(5, 0, f"  {MSG_LOADING}", curses.A_DIM)
         stdscr.refresh()
 
-        tweets = fetch_user_tweets(limit=5, include_author=True)
-        for tweet in tweets:
+        fresh_tweets = fetch_user_tweets(limit=5, include_author=True)
+
+        # Merge: prefer fresh tweets, add cached tweets not in fresh results
+        fresh_ids = {t["id"] for t in fresh_tweets}
+        merged = fresh_tweets[:]
+        for cached_tweet in cached[:5]:
+            if cached_tweet["id"] not in fresh_ids:
+                merged.append(cached_tweet)
+
+        # Rebuild items with merged results
+        items = [{"type": "new", "text": "new"}]
+        for tweet in merged[:5]:
             items.append({"type": "tweet", "data": tweet})
     except Exception:
-        # Try cached tweets as fallback
-        cached = get_cached_tweets()
-        if cached:
-            for tweet in cached[:5]:
-                items.append({"type": "tweet", "data": tweet})
-            items.append({"type": "error", "text": "(using cached tweets)"})
-        else:
-            items.append({"type": "error", "text": "(failed to fetch previous posts)"})
+        # Keep the cached tweets already loaded
+        if not cached:
+            items.append({"type": "error", "text": "(no tweets available)"})
 
     while True:
         stdscr.clear()
