@@ -757,7 +757,7 @@ def write_menu_controller(stdscr):
 
     # Always show cached tweets first for instant response
     cached = get_cached_tweets()
-    for tweet in cached[:5]:
+    for tweet in cached:
         items.append({"type": "tweet", "data": tweet})
 
     # Try to fetch fresh tweets and merge with cache
@@ -771,18 +771,18 @@ def write_menu_controller(stdscr):
         stdscr.addstr(5, 0, f"  {MSG_LOADING}", curses.A_DIM)
         stdscr.refresh()
 
-        fresh_tweets = fetch_user_tweets(limit=5, include_author=True)
+        fresh_tweets = fetch_user_tweets(limit=100, include_author=True)
 
         # Merge: prefer fresh tweets, add cached tweets not in fresh results
         fresh_ids = {t["id"] for t in fresh_tweets}
         merged = fresh_tweets[:]
-        for cached_tweet in cached[:5]:
+        for cached_tweet in cached:
             if cached_tweet["id"] not in fresh_ids:
                 merged.append(cached_tweet)
 
         # Rebuild items with merged results
         items = [{"type": "new", "text": "new"}]
-        for tweet in merged[:5]:
+        for tweet in merged:
             items.append({"type": "tweet", "data": tweet})
     except Exception:
         # Keep the cached tweets already loaded
@@ -797,9 +797,27 @@ def write_menu_controller(stdscr):
         stdscr.addstr(1, 0, "↑↓ navigate · enter select · esc back", curses.A_DIM)
 
         start_line = 3
-        for i, item in enumerate(items):
-            if start_line + i >= height - 1:
-                break
+        max_visible = height - start_line - 1
+
+        # Calculate viewport: which items to show based on current_idx
+        if len(items) <= max_visible:
+            # All items fit, show everything
+            view_start = 0
+            view_end = len(items)
+        else:
+            # Need scrolling
+            # Keep current item in middle third of screen when possible
+            preferred_offset = max_visible // 3
+            view_start = max(0, current_idx - preferred_offset)
+            view_end = min(len(items), view_start + max_visible)
+
+            # If we hit the end, adjust start
+            if view_end == len(items):
+                view_start = max(0, len(items) - max_visible)
+
+        for i in range(view_start, view_end):
+            item = items[i]
+            screen_line = start_line + (i - view_start)
 
             prefix = "▸ " if i == current_idx else "  "
 
@@ -818,7 +836,7 @@ def write_menu_controller(stdscr):
 
             attr = curses.A_REVERSE if i == current_idx else curses.A_NORMAL
             try:
-                stdscr.addstr(start_line + i, 0, line, attr)
+                stdscr.addstr(screen_line, 0, line, attr)
             except curses.error:
                 pass
 
