@@ -660,10 +660,10 @@ def main_menu_controller(stdscr) -> Optional[str]:
         stdscr.refresh()
         key = stdscr.getch()
 
-        if key == curses.KEY_UP and current_idx > 0:
-            current_idx -= 1
-        elif key == curses.KEY_DOWN and current_idx < len(commands) - 1:
-            current_idx += 1
+        if key == curses.KEY_UP:
+            current_idx = (current_idx - 1) % len(commands)
+        elif key == curses.KEY_DOWN:
+            current_idx = (current_idx + 1) % len(commands)
         elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
             return None
         elif key == ord('\n'):
@@ -681,20 +681,20 @@ def browse_tweets_controller(stdscr, tweets: List[Dict[str, Any]], header: str =
             key = stdscr.getch()
             if key == KEY_ESC:
                 detail_view = False
-            elif key == curses.KEY_UP and current_idx > 0:
-                current_idx -= 1
-            elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
-                current_idx += 1
+            elif key == curses.KEY_UP:
+                current_idx = (current_idx - 1) % len(tweets)
+            elif key == curses.KEY_DOWN:
+                current_idx = (current_idx + 1) % len(tweets)
             elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
                 break
         else:
             render_tweet_list(stdscr, tweets, current_idx, header, show_detail_hint=True)
             key = stdscr.getch()
 
-            if key == curses.KEY_UP and current_idx > 0:
-                current_idx -= 1
-            elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
-                current_idx += 1
+            if key == curses.KEY_UP:
+                current_idx = (current_idx - 1) % len(tweets)
+            elif key == curses.KEY_DOWN:
+                current_idx = (current_idx + 1) % len(tweets)
             elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
                 break
             elif key == ord('\n'):
@@ -711,10 +711,10 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
             key = stdscr.getch()
             if key == KEY_ESC:
                 detail_view = False
-            elif key == curses.KEY_UP and current_idx > 0:
-                current_idx -= 1
-            elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
-                current_idx += 1
+            elif key == curses.KEY_UP:
+                current_idx = (current_idx - 1) % len(tweets)
+            elif key == curses.KEY_DOWN:
+                current_idx = (current_idx + 1) % len(tweets)
             elif key == ord('q') or key == ord('Q'):
                 break
             elif key == ord('\n'):
@@ -741,10 +741,10 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
             render_tweet_list(stdscr, tweets, current_idx, header, show_detail_hint=True)
             key = stdscr.getch()
 
-            if key == curses.KEY_UP and current_idx > 0:
-                current_idx -= 1
-            elif key == curses.KEY_DOWN and current_idx < len(tweets) - 1:
-                current_idx += 1
+            if key == curses.KEY_UP:
+                current_idx = (current_idx - 1) % len(tweets)
+            elif key == curses.KEY_DOWN:
+                current_idx = (current_idx + 1) % len(tweets)
             elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
                 break
             elif key == ord('\n'):
