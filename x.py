@@ -843,10 +843,10 @@ def write_menu_controller(stdscr):
         stdscr.refresh()
         key = stdscr.getch()
 
-        if key == curses.KEY_UP and current_idx > 0:
-            current_idx -= 1
-        elif key == curses.KEY_DOWN and current_idx < len(items) - 1:
-            current_idx += 1
+        if key == curses.KEY_UP:
+            current_idx = (current_idx - 1) % len(items)
+        elif key == curses.KEY_DOWN:
+            current_idx = (current_idx + 1) % len(items)
         elif key == ord('q') or key == ord('Q') or key == KEY_ESC:
             return
         elif key == ord('\n'):
