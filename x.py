@@ -179,7 +179,7 @@ def get_cached_tweets() -> List[Dict[str, Any]]:
     state = load_state()
     return state.get("tweets_cache", [])
 
-def add_tweet_to_cache(tweet_id: str, tweet_text: str) -> None:
+def add_tweet_to_cache(tweet_id: str, tweet_text: str, media_ids: Optional[List[str]] = None) -> None:
     """Add newly posted tweet to cache (prepends to list)."""
     me = get_cached_user()["data"]
     state = load_state()
@@ -190,6 +190,7 @@ def add_tweet_to_cache(tweet_id: str, tweet_text: str) -> None:
         "at": datetime.now().isoformat() + "Z",
         "text": tweet_text,
         "metrics": {"retweet_count": 0, "reply_count": 0, "like_count": 0, "quote_count": 0},
+        "has_media": bool(media_ids),
         "from": {
             "id": me["id"],
             "username": me.get("username"),
@@ -206,19 +207,33 @@ def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dic
     me = get_cached_user()["data"]
     params = {
         "max_results": max(5, min(limit, 100)),
-        "tweet.fields": "created_at,public_metrics",
+        "tweet.fields": "created_at,public_metrics,attachments",
+        "expansions": "attachments.media_keys",
+        "media.fields": "type",
     }
 
     resp = api_request("GET", f"/2/users/{me['id']}/tweets", params=params)
     tweets = resp.get("data", [])
 
+    # Build media lookup
+    media_lookup = {}
+    for media in resp.get("includes", {}).get("media", []):
+        media_lookup[media["media_key"]] = media
+
     result = []
     for t in tweets:
+        # Check if tweet has media attachments
+        has_media = False
+        attachments = t.get("attachments", {})
+        if "media_keys" in attachments:
+            has_media = len(attachments["media_keys"]) > 0
+
         tweet_data = {
             "id": t["id"],
             "at": t.get("created_at"),
             "text": t.get("text"),
             "metrics": t.get("public_metrics", {}),
+            "has_media": has_media,
         }
         if include_author:
             tweet_data["from"] = {
@@ -732,7 +747,7 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                         me = get_cached_user()["data"]
                         tweet_id = resp.get('data', {}).get('id', 'unknown')
                         tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
-                        add_tweet_to_cache(tweet_id, reply_text)
+                        add_tweet_to_cache(tweet_id, reply_text, media_ids)
                         show_success_message(stdscr, "reply sent", tweet_url)
                         break
                     except Exception as e:
@@ -827,9 +842,11 @@ def write_menu_controller(stdscr):
                 line = f"{prefix}{item['text']}"
             else:
                 text = item["data"].get("text", "")
+                has_media = item["data"].get("has_media", False)
+                media_icon = "📷 " if has_media else ""
                 if len(text) > 50:
                     text = text[:47] + "⋯"
-                line = f"{prefix}{text}"
+                line = f"{prefix}{media_icon}{text}"
 
             if len(line) > width - 1:
                 line = line[:width - 4] + "⋯"
@@ -869,7 +886,7 @@ def write_menu_controller(stdscr):
                     me = get_cached_user()["data"]
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
                     tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
-                    add_tweet_to_cache(tweet_id, tweet_text)
+                    add_tweet_to_cache(tweet_id, tweet_text, media_ids)
                     show_success_message(stdscr, "posted", tweet_url)
                     return
                 except Exception as e:
@@ -890,7 +907,7 @@ def write_menu_controller(stdscr):
                     me = get_cached_user()["data"]
                     tweet_id = resp.get('data', {}).get('id', 'unknown')
                     tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
-                    add_tweet_to_cache(tweet_id, reply_text)
+                    add_tweet_to_cache(tweet_id, reply_text, media_ids)
                     show_success_message(stdscr, "thread posted", tweet_url)
                     return
                 except Exception as e:
