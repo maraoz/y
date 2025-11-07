@@ -95,13 +95,11 @@ def api_request(method: str, path: str, params: Optional[Dict[str, Any]] = None,
 # ============================================================================
 
 def load_state() -> Dict[str, Any]:
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    if not os.path.exists(STATE_FILE):
+        return {}
+
+    with open(STATE_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_state(state: Dict[str, Any]) -> None:
     try:
@@ -285,11 +283,11 @@ def fetch_timeline(limit: int = 10) -> List[Dict[str, Any]]:
 # ============================================================================
 
 def format_timestamp(iso_str: str) -> str:
-    try:
-        dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
-        return dt.strftime("%b %d, %Y %I:%M %p")
-    except Exception:
-        return iso_str
+    if not iso_str:
+        raise ValueError("Empty timestamp string")
+
+    dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+    return dt.strftime("%b %d, %Y %I:%M %p")
 
 def word_wrap(text: str, width: int) -> List[str]:
     """Word-wrap text to fit within width. Returns list of lines."""
@@ -312,30 +310,24 @@ def cleanup_temp_files(paths: List[str]) -> None:
     """Remove temporary files."""
     for path in paths:
         if os.path.exists(path):
-            try:
-                os.unlink(path)
-            except Exception:
-                pass
+            os.unlink(path)
 
 def grab_clipboard_image() -> Optional[str]:
     """Grab image from clipboard via pngpaste (macOS). Returns temp file path."""
-    try:
-        result = subprocess.run(['which', 'pngpaste'], capture_output=True, text=True)
-        if result.returncode != 0:
-            return None
-
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.png')
-        os.close(temp_fd)
-
-        result = subprocess.run(['pngpaste', temp_path], capture_output=True)
-        if result.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
-            return temp_path
-
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
+    result = subprocess.run(['which', 'pngpaste'], capture_output=True, text=True)
+    if result.returncode != 0:
         return None
-    except Exception:
-        return None
+
+    temp_fd, temp_path = tempfile.mkstemp(suffix='.png')
+    os.close(temp_fd)
+
+    result = subprocess.run(['pngpaste', temp_path], capture_output=True)
+    if result.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+        return temp_path
+
+    if os.path.exists(temp_path):
+        os.unlink(temp_path)
+    return None
 
 def upload_media(image_path: str) -> Optional[str]:
     """Upload media to X API. Returns media_id_string."""
@@ -389,7 +381,9 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
             break
 
         author = tweet.get("from", {})
-        username = author.get("username", "unknown")
+        if "username" not in author:
+            raise KeyError(f"Missing username in tweet author data: {author}")
+        username = author["username"]
         timestamp = format_timestamp(tweet.get("at", ""))
         text = tweet.get("text", "")
 
@@ -403,6 +397,7 @@ def render_tweet_list(stdscr, tweets: List[Dict[str, Any]], current_idx: int, he
         try:
             stdscr.addstr(start_line + i, 0, line, attr)
         except curses.error:
+            # Expected: writing to bottom line or screen too small
             pass
 
     stdscr.refresh()
@@ -434,12 +429,15 @@ def get_multiline_input(stdscr, header_lines: List[str],
             try:
                 stdscr.addstr(y, 0, line, attr)
             except curses.error:
+                # Expected: screen too small for all headers
                 pass
             y += 1
 
         if context_tweet:
             author = context_tweet.get("from", {})
-            username = author.get("username", "unknown")
+            if "username" not in author:
+                raise KeyError(f"Missing username in context tweet author: {author}")
+            username = author["username"]
             timestamp = format_timestamp(context_tweet.get("at", ""))
             stdscr.addstr(y, 0, f"@{username} · {timestamp}", curses.A_DIM)
             y += 1
@@ -471,11 +469,13 @@ def get_multiline_input(stdscr, header_lines: List[str],
             try:
                 stdscr.addstr(text_start_y + i, 0, line[:width-1])
             except curses.error:
+                # Expected: line near bottom of screen
                 pass
 
         try:
             stdscr.move(text_start_y + cursor_line, cursor_col)
         except curses.error:
+            # Expected: cursor position out of bounds in small terminal
             pass
         stdscr.refresh()
 
@@ -616,7 +616,9 @@ def render_tweet_detail(stdscr, tweet: Dict[str, Any], current_idx: int, total_t
     height, width = stdscr.getmaxyx()
 
     author = tweet.get("from", {})
-    username = author.get("username", "unknown")
+    if "username" not in author:
+        raise KeyError(f"Missing username in tweet detail author: {author}")
+    username = author["username"]
     timestamp = format_timestamp(tweet.get("at", ""))
     metrics = tweet.get("metrics", {})
 
@@ -670,6 +672,7 @@ def main_menu_controller(stdscr) -> Optional[str]:
             try:
                 stdscr.addstr(start_line + i, 0, f"{prefix}{desc}", attr)
             except curses.error:
+                # Expected: screen too small for menu
                 pass
 
         stdscr.refresh()
@@ -745,8 +748,13 @@ def interactive_tweet_controller(stdscr, tweets: List[Dict[str, Any]], header: s
                     try:
                         resp = create_tweet(reply_text, reply_to_id=selected["id"], media_ids=media_ids)
                         me = get_cached_user()["data"]
-                        tweet_id = resp.get('data', {}).get('id', 'unknown')
-                        tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
+                        data = resp.get('data')
+                        if not data or 'id' not in data:
+                            raise ValueError(f"API response missing tweet ID: {resp}")
+                        tweet_id = data['id']
+                        if "username" not in me:
+                            raise KeyError(f"Cached user missing username: {me}")
+                        tweet_url = f"https://x.com/{me['username']}/status/{tweet_id}"
                         add_tweet_to_cache(tweet_id, reply_text, media_ids)
                         show_success_message(stdscr, "reply sent", tweet_url)
                         break
@@ -855,6 +863,7 @@ def write_menu_controller(stdscr):
             try:
                 stdscr.addstr(screen_line, 0, line, attr)
             except curses.error:
+                # Expected: screen too small or writing near edges
                 pass
 
         stdscr.refresh()
@@ -884,8 +893,13 @@ def write_menu_controller(stdscr):
                 try:
                     resp = create_tweet(tweet_text, media_ids=media_ids)
                     me = get_cached_user()["data"]
-                    tweet_id = resp.get('data', {}).get('id', 'unknown')
-                    tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
+                    data = resp.get('data')
+                    if not data or 'id' not in data:
+                        raise ValueError(f"API response missing tweet ID: {resp}")
+                    tweet_id = data['id']
+                    if "username" not in me:
+                        raise KeyError(f"Cached user missing username: {me}")
+                    tweet_url = f"https://x.com/{me['username']}/status/{tweet_id}"
                     add_tweet_to_cache(tweet_id, tweet_text, media_ids)
                     show_success_message(stdscr, "posted", tweet_url)
                     return
@@ -905,8 +919,13 @@ def write_menu_controller(stdscr):
                 try:
                     resp = create_tweet(reply_text, reply_to_id=tweet["id"], media_ids=media_ids)
                     me = get_cached_user()["data"]
-                    tweet_id = resp.get('data', {}).get('id', 'unknown')
-                    tweet_url = f"https://x.com/{me.get('username', 'unknown')}/status/{tweet_id}"
+                    data = resp.get('data')
+                    if not data or 'id' not in data:
+                        raise ValueError(f"API response missing tweet ID: {resp}")
+                    tweet_id = data['id']
+                    if "username" not in me:
+                        raise KeyError(f"Cached user missing username: {me}")
+                    tweet_url = f"https://x.com/{me['username']}/status/{tweet_id}"
                     add_tweet_to_cache(tweet_id, reply_text, media_ids)
                     show_success_message(stdscr, "thread posted", tweet_url)
                     return
