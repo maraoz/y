@@ -201,6 +201,11 @@ def add_tweet_to_cache(tweet_id: str, tweet_text: str, media_ids: Optional[List[
     state["tweets_cache"] = cache[:100]
     save_state(state)
 
+def get_cached_timeline() -> List[Dict[str, Any]]:
+    """Get cached timeline tweets from local state."""
+    state = load_state()
+    return state.get("timeline_cache", [])
+
 def fetch_user_tweets(limit: int = 10, include_author: bool = False) -> List[Dict[str, Any]]:
     me = get_cached_user()["data"]
     params = {
@@ -276,6 +281,13 @@ def fetch_timeline(limit: int = 10) -> List[Dict[str, Any]]:
             "text": t.get("text"),
             "metrics": t.get("public_metrics", {}),
         })
+
+    # Cache timeline tweets
+    if tweets:
+        state = load_state()
+        state["timeline_cache"] = tweets
+        save_state(state)
+
     return tweets
 
 # ============================================================================
@@ -1054,15 +1066,35 @@ def cmd_thread(limit: int, stdscr=None):
 
 def cmd_timeline(limit: int, stdscr=None):
     def timeline_tui(scr):
-        scr.clear()
-        scr.addstr(0, 0, MSG_LOADING, curses.A_DIM)
-        scr.refresh()
+        # Always show cached timeline first for instant response
+        cached = get_cached_timeline()
+        tweets = cached
 
+        # Try to fetch fresh timeline and merge with cache
         try:
-            tweets = fetch_timeline(limit=limit)
+            scr.clear()
+            scr.addstr(0, 0, "catchup", curses.A_BOLD)
+            scr.addstr(1, 0, "↑↓ navigate · enter view · esc back", curses.A_DIM)
+            if cached:
+                scr.addstr(3, 0, f"  {cached[0]['text'][:50]}", curses.A_DIM)
+            scr.addstr(4, 0, f"  {MSG_LOADING}", curses.A_DIM)
+            scr.refresh()
+
+            fresh_tweets = fetch_timeline(limit=limit)
+
+            # Merge: prefer fresh tweets, add cached tweets not in fresh results
+            fresh_ids = {t["id"] for t in fresh_tweets}
+            merged = fresh_tweets[:]
+            for cached_tweet in cached:
+                if cached_tweet["id"] not in fresh_ids:
+                    merged.append(cached_tweet)
+
+            tweets = merged
         except Exception as e:
-            show_error_message(scr, str(e))
-            return
+            # Keep cached tweets if fetch fails
+            if not cached:
+                show_error_message(scr, str(e))
+                return
 
         if not tweets:
             show_empty_state(scr)
