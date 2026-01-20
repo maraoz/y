@@ -7,6 +7,7 @@ import argparse
 import requests
 import subprocess
 import tempfile
+import threading
 from datetime import datetime
 from requests_oauthlib import OAuth1
 from typing import Optional, Dict, Any, List, Tuple
@@ -795,40 +796,44 @@ def write_menu_controller(stdscr):
     for tweet in cached:
         items.append({"type": "tweet", "data": tweet})
 
-    # Try to fetch fresh tweets and merge with cache
-    try:
-        stdscr.clear()
-        stdscr.addstr(0, 0, "write", curses.A_BOLD)
-        stdscr.addstr(1, 0, "↑↓ navigate · enter select · esc back", curses.A_DIM)
-        stdscr.addstr(3, 0, "▸ new", curses.A_REVERSE)
-        if cached:
-            stdscr.addstr(4, 0, f"  {cached[0]['text'][:50]}", curses.A_DIM)
-        stdscr.addstr(5, 0, f"  {MSG_LOADING}", curses.A_DIM)
-        stdscr.refresh()
+    # Fetch fresh tweets in background thread
+    fetch_result = {"tweets": None, "error": None, "done": False}
 
-        fresh_tweets = fetch_user_tweets(limit=100, include_author=True)
+    def fetch_in_background():
+        try:
+            fetch_result["tweets"] = fetch_user_tweets(limit=100, include_author=True)
+        except Exception as e:
+            fetch_result["error"] = e
+        fetch_result["done"] = True
 
-        # Merge: prefer fresh tweets, add cached tweets not in fresh results
-        fresh_ids = {t["id"] for t in fresh_tweets}
-        merged = fresh_tweets[:]
-        for cached_tweet in cached:
-            if cached_tweet["id"] not in fresh_ids:
-                merged.append(cached_tweet)
-
-        # Rebuild items with merged results
-        items = [{"type": "new", "text": "new"}]
-        for tweet in merged:
-            items.append({"type": "tweet", "data": tweet})
-    except Exception:
-        # Keep the cached tweets already loaded
-        if not cached:
-            items.append({"type": "error", "text": "(no tweets available)"})
+    fetch_thread = threading.Thread(target=fetch_in_background, daemon=True)
+    fetch_thread.start()
+    loading = True
 
     while True:
+        # Check if background fetch completed
+        if loading and fetch_result["done"]:
+            loading = False
+            if fetch_result["tweets"] is not None:
+                fresh_tweets = fetch_result["tweets"]
+                # Merge: prefer fresh tweets, add cached tweets not in fresh results
+                fresh_ids = {t["id"] for t in fresh_tweets}
+                merged = fresh_tweets[:]
+                for cached_tweet in cached:
+                    if cached_tweet["id"] not in fresh_ids:
+                        merged.append(cached_tweet)
+                # Rebuild items with merged results
+                items = [{"type": "new", "text": "new"}]
+                for tweet in merged:
+                    items.append({"type": "tweet", "data": tweet})
+            elif not cached:
+                items.append({"type": "error", "text": "(no tweets available)"})
+
         stdscr.clear()
         height, width = stdscr.getmaxyx()
 
-        stdscr.addstr(0, 0, "write", curses.A_BOLD)
+        header = "write" if not loading else f"write ({MSG_LOADING})"
+        stdscr.addstr(0, 0, header, curses.A_BOLD)
         stdscr.addstr(1, 0, "↑↓ navigate · enter select · esc back", curses.A_DIM)
 
         start_line = 3
@@ -879,7 +884,12 @@ def write_menu_controller(stdscr):
                 pass
 
         stdscr.refresh()
+
+        # Use timeout while loading so we can check fetch completion
+        stdscr.timeout(100 if loading else -1)
         key = stdscr.getch()
+        if key == -1:  # Timeout, no key pressed
+            continue
 
         if key == curses.KEY_UP:
             current_idx = (current_idx - 1) % len(items)
